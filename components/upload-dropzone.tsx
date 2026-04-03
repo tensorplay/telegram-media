@@ -96,6 +96,16 @@ export function UploadDropzone({
 
             anySuccess = true;
             updateStatus(baseIndex, idx, { state: "done" });
+
+            // Trigger AI analysis now that the file is in R2
+            if (mediaId) {
+              fetch("/api/analyze", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ mediaId }),
+                keepalive: true,
+              }).catch(() => {});
+            }
           } catch (err) {
             updateStatus(baseIndex, idx, {
               state: "error",

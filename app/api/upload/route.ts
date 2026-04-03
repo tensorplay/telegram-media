@@ -1,7 +1,6 @@
-import { NextRequest, NextResponse, after } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getSignedUploadUrl } from "@/lib/r2";
-import { runAnalysis } from "@/lib/analyze";
 
 const ACCEPTED_TYPES = new Set([
   "image/jpeg",
@@ -12,8 +11,6 @@ const ACCEPTED_TYPES = new Set([
   "video/quicktime",
   "video/webm",
 ]);
-
-export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   try {
@@ -68,14 +65,6 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
-
-    // Schedule AI analysis to run after the response is sent.
-    // The serverless function stays alive until this completes.
-    after(async () => {
-      // Small delay to let the client finish uploading to R2
-      await new Promise((r) => setTimeout(r, 5000));
-      await runAnalysis(inserted.id);
-    });
 
     return NextResponse.json({ uploadUrl, r2Key, mediaId: inserted.id });
   } catch (err) {
