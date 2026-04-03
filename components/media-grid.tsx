@@ -40,7 +40,17 @@ function formatDate(iso: string) {
   return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}, ${h12}:${m} ${ampm}`;
 }
 
-export function MediaGrid({ media }: { media: MediaItem[] }) {
+export function MediaGrid({
+  media,
+  selectionMode = false,
+  selectedIds,
+  onToggleSelect,
+}: {
+  media: MediaItem[];
+  selectionMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+}) {
   const [viewIndex, setViewIndex] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState<string | null>(null);
@@ -97,9 +107,30 @@ export function MediaGrid({ media }: { media: MediaItem[] }) {
               className="group relative rounded-lg border bg-card overflow-hidden touch-manipulation"
             >
               <button
-                onClick={() => setViewIndex(index)}
+                onClick={() => {
+                  if (selectionMode && onToggleSelect) {
+                    onToggleSelect(item.id);
+                  } else {
+                    setViewIndex(index);
+                  }
+                }}
                 className="block w-full aspect-square bg-neutral-100 dark:bg-neutral-800 relative overflow-hidden"
               >
+                {selectionMode && (
+                  <div
+                    className={`absolute top-2 left-2 z-10 h-5 w-5 rounded border-2 flex items-center justify-center transition-colors ${
+                      selectedIds?.has(item.id)
+                        ? "bg-primary border-primary text-primary-foreground"
+                        : "bg-white/80 border-neutral-400"
+                    }`}
+                  >
+                    {selectedIds?.has(item.id) && (
+                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                )}
                 {isVideo ? (
                   <>
                     {/* eslint-disable-next-line jsx-a11y/media-has-caption */}

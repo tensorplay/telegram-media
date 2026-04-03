@@ -28,16 +28,25 @@ export default async function CreatorPage({
 
   if (!creator) notFound();
 
-  const { data: media } = await supabase
-    .from("media_files")
-    .select("id, filename, r2_key, content_type, size_bytes, created_at, ai_summary, ai_tags")
-    .eq("creator_id", creator.id)
-    .order("created_at", { ascending: false });
+  const [{ data: media }, { data: folders }] = await Promise.all([
+    supabase
+      .from("media_files")
+      .select(
+        "id, filename, r2_key, content_type, size_bytes, created_at, ai_summary, ai_tags, folder_id"
+      )
+      .eq("creator_id", creator.id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("media_folders")
+      .select("*")
+      .eq("creator_id", creator.id)
+      .order("name"),
+  ]);
 
   return (
     <>
       <Navbar email={user?.email} />
-      <main className="mx-auto max-w-5xl px-4 py-8">
+      <main className="mx-auto max-w-6xl px-4 py-8">
         <div className="flex items-center gap-2 mb-6">
           <Link href="/creators">
             <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -54,6 +63,7 @@ export default async function CreatorPage({
           creatorSlug={slug}
           creatorId={creator.id}
           media={media ?? []}
+          initialFolders={folders ?? []}
         />
       </main>
     </>
