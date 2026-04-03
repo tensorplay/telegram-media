@@ -13,12 +13,12 @@ export default async function CreatorsPage() {
   } = await supabase.auth.getUser();
 
   const { data: creators } = await supabase
-    .from("creators")
+    .from("media_creators")
     .select("*")
     .order("name");
 
   const { data: counts } = await supabase
-    .from("media")
+    .from("media_files")
     .select("creator_id");
 
   const countMap = new Map<string, number>();

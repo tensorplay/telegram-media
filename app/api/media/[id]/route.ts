@@ -17,7 +17,7 @@ export async function GET(
   }
 
   const { data: media } = await supabase
-    .from("media")
+    .from("media_files")
     .select("r2_key")
     .eq("id", id)
     .single();
@@ -45,7 +45,7 @@ export async function DELETE(
   }
 
   const { data: media } = await supabase
-    .from("media")
+    .from("media_files")
     .select("r2_key")
     .eq("id", id)
     .single();
@@ -56,7 +56,7 @@ export async function DELETE(
 
   await deleteFromR2(media.r2_key);
 
-  await supabase.from("media").delete().eq("id", id);
+  await supabase.from("media_files").delete().eq("id", id);
 
   return NextResponse.json({ success: true });
 }

@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
   const buffer = Buffer.from(await file.arrayBuffer());
   await uploadToR2(r2Key, buffer, file.type);
 
-  const { error: dbError } = await supabase.from("media").insert({
+  const { error: dbError } = await supabase.from("media_files").insert({
     creator_id: creatorId,
     filename: file.name,
     r2_key: r2Key,

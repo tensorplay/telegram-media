@@ -22,7 +22,7 @@ export default async function CreatorPage({
   } = await supabase.auth.getUser();
 
   const { data: creator } = await supabase
-    .from("creators")
+    .from("media_creators")
     .select("*")
     .eq("slug", slug)
     .single();
@@ -30,7 +30,7 @@ export default async function CreatorPage({
   if (!creator) notFound();
 
   const { data: media } = await supabase
-    .from("media")
+    .from("media_files")
     .select("*")
     .eq("creator_id", creator.id)
     .order("created_at", { ascending: false });
