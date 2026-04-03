@@ -4,6 +4,8 @@ import { Navbar } from "@/components/navbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { FolderOpen } from "lucide-react";
 
+export const dynamic = "force-dynamic";
+
 export default async function CreatorsPage() {
   const supabase = await createClient();
   const {
@@ -12,8 +14,17 @@ export default async function CreatorsPage() {
 
   const { data: creators } = await supabase
     .from("creators")
-    .select("*, media(count)")
+    .select("*")
     .order("name");
+
+  const { data: counts } = await supabase
+    .from("media")
+    .select("creator_id");
+
+  const countMap = new Map<string, number>();
+  counts?.forEach((row) => {
+    countMap.set(row.creator_id, (countMap.get(row.creator_id) ?? 0) + 1);
+  });
 
   return (
     <>
@@ -22,8 +33,7 @@ export default async function CreatorsPage() {
         <h1 className="text-2xl font-semibold mb-6">Creators</h1>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {creators?.map((creator) => {
-            const count =
-              (creator.media as unknown as { count: number }[])?.[0]?.count ?? 0;
+            const count = countMap.get(creator.id) ?? 0;
             return (
               <Link key={creator.id} href={`/creators/${creator.slug}`}>
                 <Card className="transition-shadow hover:shadow-md cursor-pointer">

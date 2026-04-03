@@ -7,6 +7,8 @@ import { UploadDropzone } from "@/components/upload-dropzone";
 import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+export const dynamic = "force-dynamic";
+
 export default async function CreatorPage({
   params,
 }: {
