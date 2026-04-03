@@ -1,0 +1,176 @@
+"use client";
+
+import { useCallback, useRef, useState } from "react";
+import { Upload, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+const ACCEPTED_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+];
+
+const MAX_SIZE = 500 * 1024 * 1024; // 500 MB
+
+interface UploadStatus {
+  name: string;
+  state: "uploading" | "done" | "error";
+  error?: string;
+}
+
+export function UploadDropzone({
+  creatorSlug,
+  creatorId,
+}: {
+  creatorSlug: string;
+  creatorId: string;
+}) {
+  const [dragOver, setDragOver] = useState(false);
+  const [uploads, setUploads] = useState<UploadStatus[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const uploadFiles = useCallback(
+    async (files: FileList | File[]) => {
+      const fileArr = Array.from(files).filter((f) => {
+        if (!ACCEPTED_TYPES.includes(f.type)) return false;
+        if (f.size > MAX_SIZE) return false;
+        return true;
+      });
+
+      if (fileArr.length === 0) return;
+
+      const newStatuses: UploadStatus[] = fileArr.map((f) => ({
+        name: f.name,
+        state: "uploading",
+      }));
+      setUploads((prev) => [...prev, ...newStatuses]);
+
+      await Promise.all(
+        fileArr.map(async (file, idx) => {
+          try {
+            const form = new FormData();
+            form.append("file", file);
+            form.append("creatorSlug", creatorSlug);
+            form.append("creatorId", creatorId);
+
+            const res = await fetch("/api/upload", {
+              method: "POST",
+              body: form,
+            });
+
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}));
+              throw new Error(body.error || "Upload failed");
+            }
+
+            setUploads((prev) =>
+              prev.map((u, i) =>
+                i === prev.length - fileArr.length + idx
+                  ? { ...u, state: "done" }
+                  : u
+              )
+            );
+          } catch (err) {
+            setUploads((prev) =>
+              prev.map((u, i) =>
+                i === prev.length - fileArr.length + idx
+                  ? {
+                      ...u,
+                      state: "error",
+                      error: err instanceof Error ? err.message : "Failed",
+                    }
+                  : u
+              )
+            );
+          }
+        })
+      );
+
+      setTimeout(() => window.location.reload(), 800);
+    },
+    [creatorSlug, creatorId]
+  );
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    if (e.dataTransfer.files.length > 0) {
+      uploadFiles(e.dataTransfer.files);
+    }
+  }
+
+  return (
+    <div>
+      <div
+        className={`relative rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
+          dragOver
+            ? "border-primary bg-primary/5"
+            : "border-neutral-300 dark:border-neutral-700"
+        }`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+      >
+        <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-3" />
+        <p className="text-sm text-muted-foreground mb-3">
+          Drag and drop photos or videos here, or
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => inputRef.current?.click()}
+        >
+          Browse files
+        </Button>
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept={ACCEPTED_TYPES.join(",")}
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0) {
+              uploadFiles(e.target.files);
+              e.target.value = "";
+            }
+          }}
+        />
+        <p className="text-xs text-muted-foreground mt-3">
+          JPG, PNG, WebP, GIF, MP4, MOV, WebM &middot; Max 500 MB
+        </p>
+      </div>
+
+      {uploads.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {uploads.map((u, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-2 text-sm rounded-md border px-3 py-2"
+            >
+              {u.state === "uploading" && (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              )}
+              {u.state === "done" && (
+                <CheckCircle2 className="h-4 w-4 text-green-600" />
+              )}
+              {u.state === "error" && (
+                <XCircle className="h-4 w-4 text-destructive" />
+              )}
+              <span className="truncate flex-1">{u.name}</span>
+              {u.error && (
+                <span className="text-xs text-destructive">{u.error}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
