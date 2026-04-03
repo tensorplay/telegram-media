@@ -57,36 +57,20 @@ async function cleanupGeminiFile(name: string) {
 
 /**
  * Embed media (image or video) using Gemini Embedding 2.
- * Images use inline base64; videos use the File API.
+ * Always uses inline base64 -- the embedding API supports videos up to
+ * 120s and images up to 6 per request via inline data.
  */
 export async function embedMedia(
   mediaBytes: Buffer,
   mimeType: string
 ): Promise<number[]> {
-  const isVideo = mimeType.startsWith("video/");
-
-  if (!isVideo && mediaBytes.length < 10 * 1024 * 1024) {
-    const base64 = mediaBytes.toString("base64");
-    const response = await ai.models.embedContent({
-      model: EMBEDDING_MODEL,
-      contents: [{ inlineData: { mimeType, data: base64 } }],
-      config: { outputDimensionality: EMBEDDING_DIMS },
-    });
-    return response.embeddings?.[0]?.values ?? [];
-  }
-
-  // For videos or large images, use File API
-  const file = await uploadToGeminiFileAPI(mediaBytes, mimeType);
-  try {
-    const response = await ai.models.embedContent({
-      model: EMBEDDING_MODEL,
-      contents: [{ fileData: { fileUri: file.uri, mimeType: file.mimeType } }],
-      config: { outputDimensionality: EMBEDDING_DIMS },
-    });
-    return response.embeddings?.[0]?.values ?? [];
-  } finally {
-    await cleanupGeminiFile(file.name);
-  }
+  const base64 = mediaBytes.toString("base64");
+  const response = await ai.models.embedContent({
+    model: EMBEDDING_MODEL,
+    contents: [{ inlineData: { mimeType, data: base64 } }],
+    config: { outputDimensionality: EMBEDDING_DIMS },
+  });
+  return response.embeddings?.[0]?.values ?? [];
 }
 
 /**

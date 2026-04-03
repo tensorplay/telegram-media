@@ -2,11 +2,9 @@ import { getSignedViewUrl } from "@/lib/r2";
 import { embedMedia, analyzeMedia } from "@/lib/gemini";
 import { createClient } from "@/lib/supabase/server";
 
-/**
- * Run AI analysis on a media file: generate embedding + summary/tags,
- * then update the database row. Called server-side after upload.
- */
 export async function runAnalysis(mediaId: string): Promise<void> {
+  console.log(`[analyze] Starting analysis for ${mediaId}`);
+
   const supabase = await createClient();
 
   const { data: media } = await supabase
@@ -20,6 +18,7 @@ export async function runAnalysis(mediaId: string): Promise<void> {
     return;
   }
 
+  console.log(`[analyze] Fetching from R2: ${media.r2_key} (${media.content_type})`);
   const signedUrl = await getSignedViewUrl(media.r2_key, 600);
 
   const res = await fetch(signedUrl);
@@ -29,21 +28,19 @@ export async function runAnalysis(mediaId: string): Promise<void> {
   }
 
   const mediaBytes = Buffer.from(await res.arrayBuffer());
+  console.log(`[analyze] Downloaded ${(mediaBytes.length / 1024 / 1024).toFixed(1)} MB`);
 
   const isVideo = media.content_type.startsWith("video/");
-  const maxEmbedSize = isVideo ? 50 * 1024 * 1024 : 10 * 1024 * 1024;
+  const maxEmbedSize = isVideo ? 100 * 1024 * 1024 : 10 * 1024 * 1024;
   const canEmbed = mediaBytes.length <= maxEmbedSize;
+
+  console.log(`[analyze] Running embedding=${canEmbed} + vision analysis...`);
 
   const [embeddingResult, analysisResult] = await Promise.allSettled([
     canEmbed
       ? embedMedia(mediaBytes, media.content_type)
       : Promise.resolve(null),
-    analyzeMedia(
-      isVideo && mediaBytes.length > 20 * 1024 * 1024
-        ? mediaBytes.subarray(0, 20 * 1024 * 1024)
-        : mediaBytes,
-      media.content_type
-    ),
+    analyzeMedia(mediaBytes, media.content_type),
   ]);
 
   const embedding =
@@ -55,14 +52,20 @@ export async function runAnalysis(mediaId: string): Promise<void> {
 
   if (embeddingResult.status === "rejected") {
     console.error(`[analyze] Embedding failed:`, embeddingResult.reason);
+  } else {
+    console.log(`[analyze] Embedding: ${embedding ? `${embedding.length} dims` : "skipped"}`);
   }
+
   if (analysisResult.status === "rejected") {
-    console.error(`[analyze] Analysis failed:`, analysisResult.reason);
+    console.error(`[analyze] Vision analysis failed:`, analysisResult.reason);
+  } else {
+    console.log(`[analyze] Summary: "${analysis.summary.slice(0, 80)}..."`);
+    console.log(`[analyze] Tags: [${analysis.tags.join(", ")}]`);
   }
 
   const updateData: Record<string, unknown> = {
-    ai_summary: analysis.summary || null,
-    ai_tags: analysis.tags.length > 0 ? analysis.tags : null,
+    ai_summary: analysis.summary || "Analysis completed",
+    ai_tags: analysis.tags.length > 0 ? analysis.tags : [],
   };
   if (embedding && embedding.length > 0) {
     updateData.embedding = JSON.stringify(embedding);
@@ -75,5 +78,7 @@ export async function runAnalysis(mediaId: string): Promise<void> {
 
   if (updateError) {
     console.error(`[analyze] DB update failed:`, updateError.message);
+  } else {
+    console.log(`[analyze] DB updated successfully for ${mediaId}`);
   }
 }

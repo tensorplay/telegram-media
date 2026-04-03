@@ -3,7 +3,14 @@
 import { useCallback, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Trash2, Download, Play, Loader2, RefreshCw } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Trash2, Download, Play, Loader2, RefreshCw, Info } from "lucide-react";
 import { MediaViewer } from "@/components/media-viewer";
 
 export interface MediaItem {
@@ -137,21 +144,61 @@ export function MediaGrid({ media }: { media: MediaItem[] }) {
                   {formatDate(item.created_at)}
                 </p>
                 {item.ai_tags && item.ai_tags.length > 0 ? (
-                  <div className="flex flex-wrap gap-1 mt-1.5">
-                    {item.ai_tags.slice(0, 3).map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-block px-1.5 py-0.5 text-[10px] rounded-full bg-secondary text-secondary-foreground"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                    {item.ai_tags.length > 3 && (
-                      <span className="text-[10px] text-muted-foreground py-0.5">
-                        +{item.ai_tags.length - 3}
-                      </span>
-                    )}
-                  </div>
+                  <Dialog>
+                    <DialogTrigger
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex flex-wrap gap-1 mt-1.5 cursor-pointer text-left"
+                    >
+                      {item.ai_tags.slice(0, 3).map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-block px-1.5 py-0.5 text-[10px] rounded-full bg-secondary text-secondary-foreground"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                      {item.ai_tags.length > 3 && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground py-0.5 hover:text-foreground transition-colors">
+                          +{item.ai_tags.length - 3}
+                          <Info className="h-2.5 w-2.5" />
+                        </span>
+                      )}
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle className="text-base">
+                          AI Analysis
+                        </DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        {item.ai_summary && (
+                          <div>
+                            <p className="text-xs font-medium text-muted-foreground mb-1">
+                              Summary
+                            </p>
+                            <p className="text-sm leading-relaxed">
+                              {item.ai_summary}
+                            </p>
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-2">
+                            Tags
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {item.ai_tags.map((tag) => (
+                              <span
+                                key={tag}
+                                className="inline-block px-2 py-1 text-xs rounded-full bg-secondary text-secondary-foreground"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
                 ) : !item.ai_summary ? (
                   <button
                     onClick={(e) => {

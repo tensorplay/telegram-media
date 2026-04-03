@@ -142,28 +142,42 @@ export function MediaViewer({
       </div>
 
       {/* Bottom bar */}
-      <div className="flex items-center justify-between px-4 py-3 sm:px-6 text-white/90 shrink-0 safe-area-bottom">
-        <div className="min-w-0 flex-1 mr-4">
-          <p className="text-sm font-medium truncate">{item?.filename}</p>
-          <p className="text-xs text-white/50">
-            {item ? formatSize(item.size_bytes) : ""}
-            {isVideo ? " · Video" : ""}
-          </p>
-          {item?.ai_summary && (
-            <p className="text-xs text-white/60 mt-1 line-clamp-2">
-              {item.ai_summary}
+      <div className="px-4 py-3 sm:px-6 text-white/90 shrink-0 safe-area-bottom">
+        <div className="flex items-center justify-between">
+          <div className="min-w-0 flex-1 mr-4">
+            <p className="text-sm font-medium truncate">{item?.filename}</p>
+            <p className="text-xs text-white/50">
+              {item ? formatSize(item.size_bytes) : ""}
+              {isVideo ? " · Video" : ""}
             </p>
+          </div>
+          {item && (
+            <a
+              href={`/api/media/${item.id}?download=1`}
+              download={item.filename}
+              className="inline-flex items-center gap-2 rounded-md bg-white/10 hover:bg-white/20 active:bg-white/25 px-3 py-2 text-sm text-white transition-colors touch-manipulation shrink-0"
+            >
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">Download</span>
+            </a>
           )}
         </div>
-        {item && (
-          <a
-            href={`/api/media/${item.id}?download=1`}
-            download={item.filename}
-            className="inline-flex items-center gap-2 rounded-md bg-white/10 hover:bg-white/20 active:bg-white/25 px-3 py-2 text-sm text-white transition-colors touch-manipulation shrink-0"
-          >
-            <Download className="h-4 w-4" />
-            <span className="hidden sm:inline">Download</span>
-          </a>
+        {item?.ai_summary && (
+          <p className="text-xs text-white/60 mt-2 line-clamp-3 sm:line-clamp-none">
+            {item.ai_summary}
+          </p>
+        )}
+        {item?.ai_tags && item.ai_tags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {item.ai_tags.map((tag) => (
+              <span
+                key={tag}
+                className="inline-block px-2 py-0.5 text-[11px] rounded-full bg-white/15 text-white/80"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
         )}
       </div>
     </div>
