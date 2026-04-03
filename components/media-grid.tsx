@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Trash2, Download, Play, Loader2 } from "lucide-react";
+import { Trash2, Download, Play, Loader2, RefreshCw } from "lucide-react";
 import { MediaViewer } from "@/components/media-viewer";
 
 export interface MediaItem {
@@ -36,6 +36,27 @@ function formatDate(iso: string) {
 export function MediaGrid({ media }: { media: MediaItem[] }) {
   const [viewIndex, setViewIndex] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState<string | null>(null);
+
+  const retryAnalysis = useCallback(async (id: string) => {
+    setAnalyzing(id);
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mediaId: id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        window.location.reload();
+      } else {
+        alert(`Analysis failed: ${data.error}`);
+      }
+    } catch (err) {
+      alert(`Analysis error: ${err instanceof Error ? err.message : "Unknown"}`);
+    }
+    setAnalyzing(null);
+  }, []);
 
   async function handleDelete(item: MediaItem) {
     if (!confirm(`Delete "${item.filename}"?`)) return;
@@ -132,10 +153,21 @@ export function MediaGrid({ media }: { media: MediaItem[] }) {
                     )}
                   </div>
                 ) : !item.ai_summary ? (
-                  <div className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    Analyzing...
-                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      retryAnalysis(item.id);
+                    }}
+                    disabled={analyzing === item.id}
+                    className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {analyzing === item.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3 w-3" />
+                    )}
+                    {analyzing === item.id ? "Analyzing..." : "Analyze"}
+                  </button>
                 ) : null}
                 <div className="flex gap-1 mt-1.5 sm:mt-2 max-sm:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                   <a

@@ -94,15 +94,6 @@ export function UploadDropzone({
               throw new Error(`R2 upload failed (${r2Res.status})`);
             }
 
-            // Fire-and-forget AI analysis
-            if (mediaId) {
-              fetch("/api/analyze", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ mediaId }),
-              }).catch(() => {});
-            }
-
             anySuccess = true;
             updateStatus(baseIndex, idx, { state: "done" });
           } catch (err) {
@@ -115,7 +106,7 @@ export function UploadDropzone({
       );
 
       if (anySuccess) {
-        setTimeout(() => window.location.reload(), 800);
+        setTimeout(() => window.location.reload(), 2000);
       }
     },
     [creatorSlug, creatorId, uploads.length]
