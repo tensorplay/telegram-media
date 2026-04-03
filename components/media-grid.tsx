@@ -24,13 +24,13 @@ export function formatSize(bytes: number) {
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  const d = new Date(iso);
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const h = d.getUTCHours();
+  const m = d.getUTCMinutes().toString().padStart(2, "0");
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  return `${months[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}, ${h12}:${m} ${ampm}`;
 }
 
 export function MediaGrid({ media }: { media: MediaItem[] }) {
@@ -111,8 +111,8 @@ export function MediaGrid({ media }: { media: MediaItem[] }) {
                 >
                   {item.filename}
                 </p>
-                <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">
-                  {formatSize(item.size_bytes)} &middot;{" "}
+                <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5" suppressHydrationWarning>
+                  {formatSize(item.size_bytes)} {"\u00B7"}{" "}
                   {formatDate(item.created_at)}
                 </p>
                 {item.ai_tags && item.ai_tags.length > 0 ? (
