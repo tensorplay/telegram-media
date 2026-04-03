@@ -6,29 +6,34 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-const r2 = new S3Client({
-  region: "auto",
-  endpoint: process.env.R2_ENDPOINT!,
-  credentials: {
-    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-  },
-});
+function getR2Client() {
+  return new S3Client({
+    region: "auto",
+    endpoint: process.env.R2_ENDPOINT!,
+    credentials: {
+      accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+    },
+  });
+}
 
-const BUCKET = process.env.R2_BUCKET!;
+function getBucket() {
+  return process.env.R2_BUCKET!;
+}
 
-export async function uploadToR2(
+export async function getSignedUploadUrl(
   key: string,
-  body: Buffer | Uint8Array,
-  contentType: string
-) {
-  await r2.send(
+  contentType: string,
+  expiresIn = 600
+): Promise<string> {
+  return getSignedUrl(
+    getR2Client(),
     new PutObjectCommand({
-      Bucket: BUCKET,
+      Bucket: getBucket(),
       Key: key,
-      Body: body,
       ContentType: contentType,
-    })
+    }),
+    { expiresIn }
   );
 }
 
@@ -37,14 +42,14 @@ export async function getSignedViewUrl(
   expiresIn = 3600
 ): Promise<string> {
   return getSignedUrl(
-    r2,
-    new GetObjectCommand({ Bucket: BUCKET, Key: key }),
+    getR2Client(),
+    new GetObjectCommand({ Bucket: getBucket(), Key: key }),
     { expiresIn }
   );
 }
 
 export async function deleteFromR2(key: string) {
-  await r2.send(
-    new DeleteObjectCommand({ Bucket: BUCKET, Key: key })
+  await getR2Client().send(
+    new DeleteObjectCommand({ Bucket: getBucket(), Key: key })
   );
 }

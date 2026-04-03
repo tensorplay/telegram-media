@@ -14,7 +14,7 @@ const ACCEPTED_TYPES = [
   "video/webm",
 ];
 
-const MAX_SIZE = 500 * 1024 * 1024; // 500 MB
+const MAX_SIZE = 500 * 1024 * 1024;
 
 interface UploadStatus {
   name: string;
@@ -33,6 +33,16 @@ export function UploadDropzone({
   const [uploads, setUploads] = useState<UploadStatus[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const updateStatus = (
+    baseIndex: number,
+    idx: number,
+    update: Partial<UploadStatus>
+  ) => {
+    setUploads((prev) =>
+      prev.map((u, i) => (i === baseIndex + idx ? { ...u, ...update } : u))
+    );
+  };
+
   const uploadFiles = useCallback(
     async (files: FileList | File[]) => {
       const fileArr = Array.from(files).filter((f) => {
@@ -43,56 +53,63 @@ export function UploadDropzone({
 
       if (fileArr.length === 0) return;
 
+      const baseIndex = uploads.length;
       const newStatuses: UploadStatus[] = fileArr.map((f) => ({
         name: f.name,
-        state: "uploading",
+        state: "uploading" as const,
       }));
       setUploads((prev) => [...prev, ...newStatuses]);
+
+      let anySuccess = false;
 
       await Promise.all(
         fileArr.map(async (file, idx) => {
           try {
-            const form = new FormData();
-            form.append("file", file);
-            form.append("creatorSlug", creatorSlug);
-            form.append("creatorId", creatorId);
-
             const res = await fetch("/api/upload", {
               method: "POST",
-              body: form,
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                filename: file.name,
+                contentType: file.type,
+                size: file.size,
+                creatorSlug,
+                creatorId,
+              }),
             });
 
             if (!res.ok) {
               const body = await res.json().catch(() => ({}));
-              throw new Error(body.error || "Upload failed");
+              throw new Error(body.error || `Server error ${res.status}`);
             }
 
-            setUploads((prev) =>
-              prev.map((u, i) =>
-                i === prev.length - fileArr.length + idx
-                  ? { ...u, state: "done" }
-                  : u
-              )
-            );
+            const { uploadUrl } = await res.json();
+
+            const r2Res = await fetch(uploadUrl, {
+              method: "PUT",
+              headers: { "Content-Type": file.type },
+              body: file,
+            });
+
+            if (!r2Res.ok) {
+              throw new Error(`R2 upload failed (${r2Res.status})`);
+            }
+
+            anySuccess = true;
+            updateStatus(baseIndex, idx, { state: "done" });
           } catch (err) {
-            setUploads((prev) =>
-              prev.map((u, i) =>
-                i === prev.length - fileArr.length + idx
-                  ? {
-                      ...u,
-                      state: "error",
-                      error: err instanceof Error ? err.message : "Failed",
-                    }
-                  : u
-              )
-            );
+            updateStatus(baseIndex, idx, {
+              state: "error",
+              error: err instanceof Error ? err.message : "Failed",
+            });
           }
         })
       );
 
-      setTimeout(() => window.location.reload(), 800);
+      if (anySuccess) {
+        setTimeout(() => window.location.reload(), 800);
+      }
     },
-    [creatorSlug, creatorId]
+    [creatorSlug, creatorId, uploads.length]
   );
 
   function handleDrop(e: React.DragEvent) {
