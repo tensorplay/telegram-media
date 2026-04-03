@@ -46,23 +46,27 @@ export async function POST(request: NextRequest) {
 
     const uploadUrl = await getSignedUploadUrl(r2Key, contentType);
 
-    const { error: dbError } = await supabase.from("media_files").insert({
-      creator_id: creatorId,
-      filename,
-      r2_key: r2Key,
-      content_type: contentType,
-      size_bytes: size ?? 0,
-      uploaded_by: user.id,
-    });
+    const { data: inserted, error: dbError } = await supabase
+      .from("media_files")
+      .insert({
+        creator_id: creatorId,
+        filename,
+        r2_key: r2Key,
+        content_type: contentType,
+        size_bytes: size ?? 0,
+        uploaded_by: user.id,
+      })
+      .select("id")
+      .single();
 
-    if (dbError) {
+    if (dbError || !inserted) {
       return NextResponse.json(
-        { error: `DB error: ${dbError.message}` },
+        { error: `DB error: ${dbError?.message ?? "No row returned"}` },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ uploadUrl, r2Key });
+    return NextResponse.json({ uploadUrl, r2Key, mediaId: inserted.id });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json(

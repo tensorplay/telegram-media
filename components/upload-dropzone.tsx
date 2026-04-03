@@ -82,7 +82,7 @@ export function UploadDropzone({
               throw new Error(body.error || `Server error ${res.status}`);
             }
 
-            const { uploadUrl } = await res.json();
+            const { uploadUrl, mediaId } = await res.json();
 
             const r2Res = await fetch(uploadUrl, {
               method: "PUT",
@@ -92,6 +92,15 @@ export function UploadDropzone({
 
             if (!r2Res.ok) {
               throw new Error(`R2 upload failed (${r2Res.status})`);
+            }
+
+            // Fire-and-forget AI analysis
+            if (mediaId) {
+              fetch("/api/analyze", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ mediaId }),
+              }).catch(() => {});
             }
 
             anySuccess = true;
@@ -123,7 +132,7 @@ export function UploadDropzone({
   return (
     <div>
       <div
-        className={`relative rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
+        className={`relative rounded-lg border-2 border-dashed p-4 sm:p-8 text-center transition-colors ${
           dragOver
             ? "border-primary bg-primary/5"
             : "border-neutral-300 dark:border-neutral-700"
@@ -141,7 +150,8 @@ export function UploadDropzone({
         </p>
         <Button
           variant="outline"
-          size="sm"
+          size="default"
+          className="touch-manipulation"
           onClick={() => inputRef.current?.click()}
         >
           Browse files

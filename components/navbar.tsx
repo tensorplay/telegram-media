@@ -16,18 +16,26 @@ export function Navbar({ email }: { email?: string }) {
   }
 
   return (
-    <header className="border-b bg-white dark:bg-neutral-900">
-      <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
-        <Link href="/creators" className="text-lg font-semibold tracking-tight">
+    <header className="border-b bg-white dark:bg-neutral-900 safe-area-top">
+      <div className="mx-auto flex h-12 sm:h-14 max-w-5xl items-center justify-between px-4">
+        <Link
+          href="/creators"
+          className="text-base sm:text-lg font-semibold tracking-tight touch-manipulation"
+        >
           Creator Media
         </Link>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           {email && (
-            <span className="text-sm text-muted-foreground hidden sm:inline">
+            <span className="text-xs sm:text-sm text-muted-foreground max-w-[120px] sm:max-w-none truncate">
               {email}
             </span>
           )}
-          <Button variant="ghost" size="sm" onClick={handleSignOut}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="touch-manipulation"
+            onClick={handleSignOut}
+          >
             Sign out
           </Button>
         </div>

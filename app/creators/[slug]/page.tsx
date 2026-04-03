@@ -2,8 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Navbar } from "@/components/navbar";
-import { MediaGrid } from "@/components/media-grid";
-import { UploadDropzone } from "@/components/upload-dropzone";
+import { CreatorContent } from "@/components/creator-content";
 import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -31,7 +30,7 @@ export default async function CreatorPage({
 
   const { data: media } = await supabase
     .from("media_files")
-    .select("*")
+    .select("id, filename, r2_key, content_type, size_bytes, created_at, ai_summary, ai_tags")
     .eq("creator_id", creator.id)
     .order("created_at", { ascending: false });
 
@@ -51,9 +50,11 @@ export default async function CreatorPage({
           </span>
         </div>
 
-        <UploadDropzone creatorSlug={slug} creatorId={creator.id} />
-
-        <MediaGrid media={media ?? []} />
+        <CreatorContent
+          creatorSlug={slug}
+          creatorId={creator.id}
+          media={media ?? []}
+        />
       </main>
     </>
   );
