@@ -17,14 +17,18 @@ export default async function CreatorsPage() {
     .select("*")
     .order("name");
 
-  const { data: counts } = await supabase
-    .from("media_files")
-    .select("creator_id");
-
+  // PostgREST caps row returns at 1000, so don't fetch rows just to count —
+  // run a head/count query per creator in parallel instead.
   const countMap = new Map<string, number>();
-  counts?.forEach((row) => {
-    countMap.set(row.creator_id, (countMap.get(row.creator_id) ?? 0) + 1);
-  });
+  await Promise.all(
+    (creators ?? []).map(async (creator) => {
+      const { count } = await supabase
+        .from("media_files")
+        .select("id", { count: "exact", head: true })
+        .eq("creator_id", creator.id);
+      countMap.set(creator.id, count ?? 0);
+    })
+  );
 
   return (
     <>

@@ -28,14 +28,34 @@ export default async function CreatorPage({
 
   if (!creator) notFound();
 
-  const [{ data: media }, { data: folders }] = await Promise.all([
-    supabase
+  // Supabase/PostgREST caps selects at 1000 rows by default, so page through
+  // the media table until we've fetched everything for this creator.
+  const PAGE_SIZE = 1000;
+  async function fetchAllMedia() {
+    const all: NonNullable<
+      Awaited<ReturnType<typeof fetchMediaPage>>["data"]
+    > = [];
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await fetchMediaPage(from, from + PAGE_SIZE - 1);
+      if (error || !data) break;
+      all.push(...data);
+      if (data.length < PAGE_SIZE) break;
+    }
+    return all;
+  }
+  function fetchMediaPage(from: number, to: number) {
+    return supabase
       .from("media_files")
       .select(
         "id, filename, r2_key, content_type, size_bytes, created_at, ai_summary, ai_tags, folder_id"
       )
       .eq("creator_id", creator.id)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .range(from, to);
+  }
+
+  const [media, { data: folders }] = await Promise.all([
+    fetchAllMedia(),
     supabase
       .from("media_folders")
       .select("*")
@@ -55,14 +75,14 @@ export default async function CreatorPage({
           </Link>
           <h1 className="text-2xl font-semibold">{creator.name}</h1>
           <span className="text-sm text-muted-foreground ml-2">
-            {media?.length ?? 0} files
+            {media.length} files
           </span>
         </div>
 
         <CreatorContent
           creatorSlug={slug}
           creatorId={creator.id}
-          media={media ?? []}
+          media={media}
           initialFolders={folders ?? []}
         />
       </main>

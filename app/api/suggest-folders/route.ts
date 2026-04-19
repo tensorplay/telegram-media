@@ -9,14 +9,24 @@ export async function GET(request: NextRequest) {
   const creatorId = request.nextUrl.searchParams.get("creatorId");
   if (!creatorId) return NextResponse.json({ error: "Missing creatorId" }, { status: 400 });
 
-  const { data: uncategorized } = await supabase
-    .from("media_files")
-    .select("id, ai_tags")
-    .eq("creator_id", creatorId)
-    .is("folder_id", null)
-    .not("ai_tags", "is", null);
+  // PostgREST caps selects at 1000 rows, so paginate to pull every
+  // uncategorized file for this creator.
+  const PAGE_SIZE = 1000;
+  const uncategorized: { id: string; ai_tags: string[] | null }[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("media_files")
+      .select("id, ai_tags")
+      .eq("creator_id", creatorId)
+      .is("folder_id", null)
+      .not("ai_tags", "is", null)
+      .range(from, from + PAGE_SIZE - 1);
+    if (error || !data) break;
+    uncategorized.push(...data);
+    if (data.length < PAGE_SIZE) break;
+  }
 
-  if (!uncategorized || uncategorized.length === 0) {
+  if (uncategorized.length === 0) {
     return NextResponse.json({ suggestions: [] });
   }
 
