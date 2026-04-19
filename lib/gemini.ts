@@ -74,6 +74,73 @@ export async function embedMedia(
 }
 
 /**
+ * Ask Gemini to collapse near-duplicate tags into canonical forms.
+ * Returns a mapping of variant -> canonical. Tags that don't appear as keys
+ * should be left alone.
+ */
+export async function clusterTags(
+  tags: { tag: string; count: number }[]
+): Promise<Record<string, string>> {
+  if (tags.length === 0) return {};
+
+  const listing = tags
+    .map((t) => `${t.tag} (${t.count})`)
+    .join("\n");
+
+  const prompt = `You are cleaning up a tag vocabulary used to organize a photo library. Below is a list of tags with their usage counts. Many are near-duplicates, plurals, or synonyms that should be merged into a single canonical form.
+
+Return a JSON object mapping variant tags to their canonical form. Rules:
+- Only include tags that should be merged. Leave unique or already-canonical tags out of the output.
+- Prefer the most common and shortest canonical form (e.g. "indoor" not "indoors", "necklace" not "neckless").
+- Merge obvious plurals, spelling variants, and near-synonyms ("smiling"/"smile", "red hair"/"red-haired").
+- Do NOT merge tags that describe genuinely different things, even if related. Examples that must stay separate: "cross necklace" vs "pearl necklace" vs "hoop earrings" (different jewelry); "green eyes" vs "blue eyes"; "indoor" vs "outdoor"; "daytime" vs "evening" vs "night".
+- Do not invent canonical tags that aren't in the input list.
+
+Return ONLY the raw JSON object, no markdown fences, no prose.
+
+Tags:
+${listing}`;
+
+  const response = await ai.models.generateContent({
+    model: VISION_MODEL,
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+  });
+
+  const text = response.text?.trim() ?? "{}";
+  const cleaned = text.replace(/^```json?\n?/i, "").replace(/\n?```$/i, "");
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const validTags = new Set(tags.map((t) => t.tag));
+      const mapping: Record<string, string> = {};
+      for (const [variant, canonical] of Object.entries(parsed)) {
+        if (typeof canonical !== "string") continue;
+        const v = variant.trim().toLowerCase();
+        const c = canonical.trim().toLowerCase();
+        if (!v || !c || v === c) continue;
+        if (!validTags.has(v) || !validTags.has(c)) continue;
+        mapping[v] = c;
+      }
+      // Collapse transitive mappings: a->b, b->c ===> a->c.
+      for (const key of Object.keys(mapping)) {
+        let target = mapping[key];
+        const seen = new Set<string>([key]);
+        while (mapping[target] && !seen.has(target)) {
+          seen.add(target);
+          target = mapping[target];
+        }
+        mapping[key] = target;
+      }
+      return mapping;
+    }
+  } catch {
+    console.error("[clusterTags] Failed to parse Gemini response:", text);
+  }
+  return {};
+}
+
+/**
  * Embed a text query into the same vector space as media.
  */
 export async function embedText(query: string): Promise<number[]> {

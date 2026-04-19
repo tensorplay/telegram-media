@@ -6,6 +6,7 @@ import { X, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { MediaItem } from "@/components/media-grid";
 import { formatSize } from "@/components/media-grid";
+import { LazyMedia } from "@/components/lazy-media";
 
 export function MediaViewer({
   media,
@@ -98,30 +99,32 @@ export function MediaViewer({
 
         <div className="overflow-hidden w-full h-full" ref={emblaRef}>
           <div className="flex h-full touch-pan-y">
-            {media.map((slide) => {
+            {media.map((slide, idx) => {
               const slideIsVideo = slide.content_type.startsWith("video/");
+              // Only load the current slide and its immediate neighbors so
+              // opening the viewer on a 2k-file creator doesn't fan out
+              // thousands of R2 requests.
+              const shouldLoad = Math.abs(idx - current) <= 1;
               return (
                 <div
                   key={slide.id}
                   className="flex-[0_0_100%] min-w-0 flex items-center justify-center px-4 sm:px-16"
                 >
-                  {slideIsVideo ? (
-                    // eslint-disable-next-line jsx-a11y/media-has-caption
-                    <video
-                      src={`/api/media/${slide.id}`}
-                      controls
-                      playsInline
-                      preload="metadata"
-                      className="max-w-full max-h-[calc(100vh-10rem)] rounded-lg"
+                  {shouldLoad ? (
+                    <LazyMedia
+                      mediaId={slide.id}
+                      isVideo={slideIsVideo}
+                      alt={slide.filename}
+                      eager
+                      className={
+                        slideIsVideo
+                          ? "max-w-full max-h-[calc(100vh-10rem)] rounded-lg"
+                          : "max-w-full max-h-[calc(100vh-10rem)] rounded-lg object-contain"
+                      }
+                      videoProps={{ controls: true }}
                     />
                   ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={`/api/media/${slide.id}`}
-                      alt={slide.filename}
-                      className="max-w-full max-h-[calc(100vh-10rem)] rounded-lg object-contain"
-                      draggable={false}
-                    />
+                    <div className="w-8 h-8" />
                   )}
                 </div>
               );

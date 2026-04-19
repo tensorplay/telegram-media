@@ -6,8 +6,10 @@ import { MediaGrid, type MediaItem } from "@/components/media-grid";
 import { UploadDropzone } from "@/components/upload-dropzone";
 import { FolderSidebar, type Folder } from "@/components/folder-sidebar";
 import { MoveDialog } from "@/components/move-dialog";
+import { CleanupTagsDialog } from "@/components/cleanup-tags-dialog";
+import { TagFilter } from "@/components/tag-filter";
 import { Button } from "@/components/ui/button";
-import { CheckSquare, X, FolderInput, Sparkles } from "lucide-react";
+import { CheckSquare, X, FolderInput, Sparkles, Wand2 } from "lucide-react";
 
 export function CreatorContent({
   creatorSlug,
@@ -26,6 +28,9 @@ export function CreatorContent({
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [moveOpen, setMoveOpen] = useState(false);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [includeTags, setIncludeTags] = useState<Set<string>>(new Set());
+  const [excludeTags, setExcludeTags] = useState<Set<string>>(new Set());
   const [suggestions, setSuggestions] = useState<
     { folderName: string; mediaIds: string[]; count: number }[]
   >([]);
@@ -73,11 +78,77 @@ export function CreatorContent({
   }, [media, activeFolder, folders]);
 
   // Apply search filter on top
-  const displayMedia = useMemo(() => {
+  const searchFiltered = useMemo(() => {
     if (searchIds === null) return folderFiltered;
     const idSet = new Set(searchIds);
     return folderFiltered.filter((m) => idSet.has(m.id));
   }, [folderFiltered, searchIds]);
+
+  // Apply tag filter on top of folder + search
+  const displayMedia = useMemo(() => {
+    if (includeTags.size === 0 && excludeTags.size === 0) return searchFiltered;
+    return searchFiltered.filter((m) => {
+      const tags = new Set(m.ai_tags ?? []);
+      for (const t of includeTags) if (!tags.has(t)) return false;
+      for (const t of excludeTags) if (tags.has(t)) return false;
+      return true;
+    });
+  }, [searchFiltered, includeTags, excludeTags]);
+
+  // All distinct tags across the creator's media, with counts, for the filter panel.
+  const allTags = useMemo(() => {
+    const counts = new Map<string, number>();
+    media.forEach((m) =>
+      m.ai_tags?.forEach((t) => counts.set(t, (counts.get(t) ?? 0) + 1))
+    );
+    return Array.from(counts.entries())
+      .map(([tag, count]) => ({ tag, count }))
+      .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+  }, [media]);
+
+  const setTagMode = useCallback(
+    (tag: string, mode: "include" | "exclude" | "neutral") => {
+      setIncludeTags((inc) => {
+        const next = new Set(inc);
+        if (mode === "include") next.add(tag);
+        else next.delete(tag);
+        return next;
+      });
+      setExcludeTags((exc) => {
+        const next = new Set(exc);
+        if (mode === "exclude") next.add(tag);
+        else next.delete(tag);
+        return next;
+      });
+    },
+    []
+  );
+
+  const cycleTag = useCallback(
+    (tag: string) => {
+      if (includeTags.has(tag)) setTagMode(tag, "exclude");
+      else if (excludeTags.has(tag)) setTagMode(tag, "neutral");
+      else setTagMode(tag, "include");
+    },
+    [includeTags, excludeTags, setTagMode]
+  );
+
+  const removeTag = useCallback(
+    (tag: string) => setTagMode(tag, "neutral"),
+    [setTagMode]
+  );
+
+  const clearTagFilters = useCallback(() => {
+    setIncludeTags(new Set());
+    setExcludeTags(new Set());
+  }, []);
+
+  const handleTileTagClick = useCallback(
+    (tag: string, exclude: boolean) => {
+      setTagMode(tag, exclude ? "exclude" : "include");
+    },
+    [setTagMode]
+  );
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -132,12 +203,47 @@ export function CreatorContent({
           </div>
         </div>
 
+        <TagFilter
+          allTags={allTags}
+          includeTags={includeTags}
+          excludeTags={excludeTags}
+          onCycle={cycleTag}
+          onRemove={removeTag}
+          onClear={clearTagFilters}
+        />
+
         {/* Selection toolbar */}
         {selectionMode ? (
-          <div className="flex items-center gap-2 mb-4 p-2 rounded-lg border bg-muted/50">
+          <div className="flex flex-wrap items-center gap-2 mb-4 p-2 rounded-lg border bg-muted/50">
             <span className="text-sm font-medium">
               {selectedIds.size} selected
             </span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const visibleIds = displayMedia.map((m) => m.id);
+                const allSelected =
+                  visibleIds.length > 0 &&
+                  visibleIds.every((id) => selectedIds.has(id));
+                setSelectedIds((prev) => {
+                  const next = new Set(prev);
+                  if (allSelected) {
+                    visibleIds.forEach((id) => next.delete(id));
+                  } else {
+                    visibleIds.forEach((id) => next.add(id));
+                  }
+                  return next;
+                });
+              }}
+              disabled={displayMedia.length === 0}
+            >
+              <CheckSquare className="h-3.5 w-3.5 mr-1.5" />
+              {displayMedia.length > 0 &&
+              displayMedia.every((m) => selectedIds.has(m.id))
+                ? `Deselect all (${displayMedia.length})`
+                : `Select all (${displayMedia.length})`}
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -162,6 +268,14 @@ export function CreatorContent({
             >
               <CheckSquare className="h-3.5 w-3.5 mr-1.5" />
               Select
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCleanupOpen(true)}
+            >
+              <Wand2 className="h-3.5 w-3.5 mr-1.5" />
+              Clean up tags
             </Button>
           </div>
         )}
@@ -223,7 +337,9 @@ export function CreatorContent({
         <UploadDropzone creatorSlug={creatorSlug} creatorId={creatorId} />
 
         <div className="mt-2">
-          {searchIds !== null && (
+          {(searchIds !== null ||
+            includeTags.size > 0 ||
+            excludeTags.size > 0) && (
             <p className="text-sm text-muted-foreground mb-2">
               Showing {displayMedia.length} of {media.length} results
             </p>
@@ -233,6 +349,7 @@ export function CreatorContent({
             selectionMode={selectionMode}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
+            onTagClick={handleTileTagClick}
           />
         </div>
       </div>
@@ -243,6 +360,12 @@ export function CreatorContent({
         folders={folders}
         selectedCount={selectedIds.size}
         onMove={handleMove}
+      />
+
+      <CleanupTagsDialog
+        open={cleanupOpen}
+        onOpenChange={setCleanupOpen}
+        creatorId={creatorId}
       />
     </div>
   );

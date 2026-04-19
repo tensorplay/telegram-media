@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Trash2, Download, Play, Loader2, RefreshCw, Info } from "lucide-react";
 import { MediaViewer } from "@/components/media-viewer";
+import { LazyMedia } from "@/components/lazy-media";
 
 export interface MediaItem {
   id: string;
@@ -45,11 +46,13 @@ export function MediaGrid({
   selectionMode = false,
   selectedIds,
   onToggleSelect,
+  onTagClick,
 }: {
   media: MediaItem[];
   selectionMode?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
+  onTagClick?: (tag: string, exclude: boolean) => void;
 }) {
   const [viewIndex, setViewIndex] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -131,28 +134,16 @@ export function MediaGrid({
                     )}
                   </div>
                 )}
-                {isVideo ? (
-                  <>
-                    {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                    <video
-                      src={`/api/media/${item.id}`}
-                      preload="metadata"
-                      muted
-                      playsInline
-                      className="object-cover w-full h-full"
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                      <Play className="h-10 w-10 text-white drop-shadow" />
-                    </div>
-                  </>
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={`/api/media/${item.id}`}
-                    alt={item.filename}
-                    className="object-cover w-full h-full"
-                    loading="lazy"
-                  />
+                <LazyMedia
+                  mediaId={item.id}
+                  isVideo={isVideo}
+                  alt={item.filename}
+                  className="object-cover w-full h-full"
+                />
+                {isVideo && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
+                    <Play className="h-10 w-10 text-white drop-shadow" />
+                  </div>
                 )}
                 {isVideo && (
                   <Badge
@@ -175,61 +166,80 @@ export function MediaGrid({
                   {formatDate(item.created_at)}
                 </p>
                 {item.ai_tags && item.ai_tags.length > 0 ? (
-                  <Dialog>
-                    <DialogTrigger
-                      onClick={(e) => e.stopPropagation()}
-                      className="flex flex-wrap gap-1 mt-1.5 cursor-pointer text-left"
-                    >
-                      {item.ai_tags.slice(0, 3).map((tag) => (
-                        <span
-                          key={tag}
-                          className="inline-block px-1.5 py-0.5 text-[10px] rounded-full bg-secondary text-secondary-foreground"
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {item.ai_tags.slice(0, 3).map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onTagClick?.(tag, e.shiftKey);
+                        }}
+                        title={
+                          onTagClick
+                            ? `Click to filter by "${tag}" (shift-click to exclude)`
+                            : tag
+                        }
+                        className="inline-block px-1.5 py-0.5 text-[10px] rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/70 transition-colors cursor-pointer"
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                    {item.ai_tags.length > 3 && (
+                      <Dialog>
+                        <DialogTrigger
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground py-0.5 hover:text-foreground transition-colors cursor-pointer"
                         >
-                          {tag}
-                        </span>
-                      ))}
-                      {item.ai_tags.length > 3 && (
-                        <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground py-0.5 hover:text-foreground transition-colors">
                           +{item.ai_tags.length - 3}
                           <Info className="h-2.5 w-2.5" />
-                        </span>
-                      )}
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-md">
-                      <DialogHeader>
-                        <DialogTitle className="text-base">
-                          AI Analysis
-                        </DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        {item.ai_summary && (
-                          <div>
-                            <p className="text-xs font-medium text-muted-foreground mb-1">
-                              Summary
-                            </p>
-                            <p className="text-sm leading-relaxed">
-                              {item.ai_summary}
-                            </p>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-md">
+                          <DialogHeader>
+                            <DialogTitle className="text-base">
+                              AI Analysis
+                            </DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4">
+                            {item.ai_summary && (
+                              <div>
+                                <p className="text-xs font-medium text-muted-foreground mb-1">
+                                  Summary
+                                </p>
+                                <p className="text-sm leading-relaxed">
+                                  {item.ai_summary}
+                                </p>
+                              </div>
+                            )}
+                            <div>
+                              <p className="text-xs font-medium text-muted-foreground mb-2">
+                                Tags
+                              </p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {item.ai_tags!.map((tag) => (
+                                  <button
+                                    key={tag}
+                                    type="button"
+                                    onClick={(e) =>
+                                      onTagClick?.(tag, e.shiftKey)
+                                    }
+                                    title={
+                                      onTagClick
+                                        ? `Click to filter by "${tag}" (shift-click to exclude)`
+                                        : tag
+                                    }
+                                    className="inline-block px-2 py-1 text-xs rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/70 transition-colors"
+                                  >
+                                    {tag}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
                           </div>
-                        )}
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-2">
-                            Tags
-                          </p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {item.ai_tags.map((tag) => (
-                              <span
-                                key={tag}
-                                className="inline-block px-2 py-1 text-xs rounded-full bg-secondary text-secondary-foreground"
-                              >
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
+                        </DialogContent>
+                      </Dialog>
+                    )}
+                  </div>
                 ) : !item.ai_summary ? (
                   <button
                     onClick={(e) => {
