@@ -216,3 +216,49 @@ Return ONLY the raw JSON object, no markdown fences or extra text.`,
     }
   }
 }
+
+
+export async function analyzeMediaWithCustomPrompt(
+  mediaBytes: Buffer,
+  mimeType: string,
+  prompt: string
+): Promise<unknown> {
+  const isVideo = mimeType.startsWith("video/");
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let mediaPart: any;
+  let fileToCleanup: string | null = null;
+
+  if (!isVideo && mediaBytes.length < 20 * 1024 * 1024) {
+    mediaPart = {
+      inlineData: { mimeType, data: mediaBytes.toString("base64") },
+    };
+  } else {
+    const file = await uploadToGeminiFileAPI(mediaBytes, mimeType);
+    fileToCleanup = file.name;
+    mediaPart = { fileData: { fileUri: file.uri, mimeType: file.mimeType } };
+  }
+
+  try {
+    const response = await ai.models.generateContent({
+      model: VISION_MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            mediaPart,
+            {
+              text: prompt,
+            },
+          ],
+        },
+      ],
+    });
+
+    return response.text?.trim() ?? "";
+  } finally {
+    if (fileToCleanup) {
+      await cleanupGeminiFile(fileToCleanup);
+    }
+  }
+}
