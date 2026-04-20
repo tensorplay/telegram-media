@@ -37,7 +37,7 @@ export async function runAnalysis(mediaId: string): Promise<void> {
 
   const { data: media } = await supabase
     .from("media_files")
-    .select("r2_key, content_type")
+    .select("r2_key, content_type, filename, creator_id")
     .eq("id", mediaId)
     .single();
 
@@ -157,16 +157,19 @@ export async function runAnalysis(mediaId: string): Promise<void> {
 
   if (taxonomyPipelineResult && taxonomyPipelineResult.tasks.length > 0) {
     try {
-      // TODO: Confirm the real source for creatorId in this project.
-      // Temporary placeholder so the integration point is explicit and easy to update.
-      const creatorId: number | null = null;
+      // TODO: Replace this temporary creatorId extraction with the real source.
+      // media_files.creator_id is UUID, while media_content_analysis.creator_id is bigint.
+      // For now, we try to use the last UUID segment only if it is numeric.
+      const creatorIdSegment = media.creator_id?.split("-").pop() ?? null;
+      const creatorId =
+        creatorIdSegment && /^\d+$/.test(creatorIdSegment)
+          ? Number.parseInt(creatorIdSegment, 10)
+          : null;
       await persistTaxonomyResults({
         creatorId,
         originalFileHash,
         mediaType,
-        // TODO: Confirm the real source for referenceName in this project.
-        // We are using r2_key temporarily because it is confirmed to exist.        
-        referenceName: media.r2_key, 
+        referenceName: media.filename,
         description: analysis.summary || null,
         isSexual: taxonomyPipelineResult.isSexual,        
         moderationStatus: "PENDING",
