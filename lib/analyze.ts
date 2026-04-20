@@ -157,9 +157,11 @@ export async function runAnalysis(mediaId: string): Promise<void> {
 
   if (taxonomyPipelineResult && taxonomyPipelineResult.tasks.length > 0) {
     try {
-      // TODO: Confirm where creatorId should come from in this project.
-      // Do not assume media_files.creator_id exists until the schema is confirmed.
+      // TODO: Confirm the real source for creatorId in this project.
+      // Temporary placeholder so the integration point is explicit and easy to update.
+      const creatorId: number | null = null;
       await persistTaxonomyResults({
+        creatorId,
         originalFileHash,
         mediaType,
         // TODO: Confirm the real source for referenceName in this project.
