@@ -9,8 +9,10 @@ type MediaContentAnalysisRow = {
 };
 
 export type PersistTaxonomyResultsInput = {
-  creatorId?: number | null;
+  creatorId?: string | null;
   originalFileHash: string;
+  mediaFileId?: string | null;
+  r2Key?: string | null;
   mediaType: "video" | "image" | "audio";
   referenceName: string;
   description?: string | null;
@@ -135,6 +137,8 @@ export async function persistTaxonomyResults(
 ): Promise<void> {
   const {
     creatorId = null,
+    mediaFileId = null,
+    r2Key = null,
     originalFileHash,
     mediaType,
     referenceName,
@@ -180,6 +184,8 @@ export async function persistTaxonomyResults(
       .from("media_content_analysis")
       .insert({
         creator_id: creatorId,
+        media_file_id: mediaFileId,
+        r2_key: r2Key,
         original_file_hash: originalFileHash,
         media_type: mediaType,
         reference_name: referenceName,
@@ -208,6 +214,8 @@ export async function persistTaxonomyResults(
     .from("media_content_analysis")
     .update({
       creator_id: creatorId,
+      media_file_id: mediaFileId,
+      r2_key: r2Key,
       media_type: mediaType,
       reference_name: referenceName,
       description,

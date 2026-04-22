@@ -157,16 +157,11 @@ export async function runAnalysis(mediaId: string): Promise<void> {
 
   if (taxonomyPipelineResult && taxonomyPipelineResult.tasks.length > 0) {
     try {
-      // TODO: Replace this temporary creatorId extraction with the real source.
-      // media_files.creator_id is UUID, while media_content_analysis.creator_id is bigint.
-      // For now, we try to use the last UUID segment only if it is numeric.
-      const creatorIdSegment = media.creator_id?.split("-").pop() ?? null;
-      const creatorId =
-        creatorIdSegment && /^\d+$/.test(creatorIdSegment)
-          ? Number.parseInt(creatorIdSegment, 10)
-          : null;
+      const creatorId = media.creator_id;
       await persistTaxonomyResults({
         creatorId,
+        mediaFileId: mediaId,
+        r2Key: media.r2_key,
         originalFileHash,
         mediaType,
         referenceName: media.filename,
