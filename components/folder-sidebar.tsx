@@ -240,10 +240,10 @@ export function FolderSidebar({
             Folders
           </span>
           <Dialog open={creating} onOpenChange={setCreating}>
-            <DialogTrigger>
-              <Button variant="ghost" size="icon" className="h-6 w-6">
-                <FolderPlus className="h-3.5 w-3.5" />
-              </Button>
+            <DialogTrigger
+              render={<Button variant="ghost" size="icon" className="h-6 w-6" />}
+            >
+              <FolderPlus className="h-3.5 w-3.5" />
             </DialogTrigger>
             <DialogContent className="sm:max-w-xs">
               <DialogHeader>
@@ -311,10 +311,12 @@ export function FolderSidebar({
           Uncategorized ({uncategorizedCount})
         </button>
         <Dialog open={creating} onOpenChange={setCreating}>
-          <DialogTrigger>
-            <button className="shrink-0 px-3 py-1.5 rounded-full text-sm border border-dashed border-border hover:bg-muted transition-colors">
-              + Folder
-            </button>
+          <DialogTrigger
+            render={
+              <button className="shrink-0 px-3 py-1.5 rounded-full text-sm border border-dashed border-border hover:bg-muted transition-colors" />
+            }
+          >
+            + Folder
           </DialogTrigger>
           <DialogContent className="sm:max-w-xs">
             <DialogHeader>

@@ -7,6 +7,31 @@ import { persistTaxonomyResults } from "@/lib/media-analysis/persist-taxonomy-re
 import { getSignedViewUrl } from "@/lib/r2";
 import { createClient } from "@/lib/supabase/server";
 
+function parseExistingEmbedding(value: unknown): number[] | null {
+  if (!value) return null;
+
+  if (Array.isArray(value)) {
+    return value.every((n) => typeof n === "number") ? value : null;
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) && parsed.every((n) => typeof n === "number")
+        ? parsed
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+function normalizeExistingTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((tag): tag is string => typeof tag === "string");
+}
 
 function buildDescriptionEmbeddingText(input: {
   summary: string;
@@ -37,7 +62,7 @@ export async function runAnalysis(mediaId: string): Promise<void> {
 
   const { data: media } = await supabase
     .from("media_files")
-    .select("r2_key, content_type, filename, creator_id")
+    .select("r2_key, content_type, filename, creator_id, ai_summary, ai_tags, embedding")
     .eq("id", mediaId)
     .single();
 
@@ -45,6 +70,14 @@ export async function runAnalysis(mediaId: string): Promise<void> {
     console.error(`[analyze] Media ${mediaId} not found`);
     return;
   }
+
+  const { data: existingTaxonomy } = await supabase
+    .from("media_content_analysis")
+    .select("media_file_id")
+    .eq("media_file_id", mediaId)
+    .maybeSingle();
+
+  const hasExistingTaxonomy = !!existingTaxonomy;
 
   console.log(`[analyze] Fetching from R2: ${media.r2_key} (${media.content_type})`);
   const signedUrl = await getSignedViewUrl(media.r2_key, 600);
@@ -69,90 +102,134 @@ export async function runAnalysis(mediaId: string): Promise<void> {
       ? "image"
       : "audio";
 
+  const existingSummary =
+    typeof media.ai_summary === "string" ? media.ai_summary : "";
+  const existingTags = normalizeExistingTags(media.ai_tags);
+  const existingEmbedding = parseExistingEmbedding(media.embedding);
+
+  const hasExistingLegacyAnalysis =
+    existingSummary.trim().length > 0 || existingTags.length > 0;
+  const hasExistingEmbedding =
+    Array.isArray(existingEmbedding) && existingEmbedding.length > 0;
+
   const maxEmbedSize = isVideo ? 100 * 1024 * 1024 : 10 * 1024 * 1024;
   const canEmbed = mediaBytes.length <= maxEmbedSize;
 
-  console.log(`[analyze] Running embedding=${canEmbed} + vision analysis...`);
+  let embedding: number[] | null = hasExistingEmbedding ? existingEmbedding : null;
+  let analysis: { summary: string; tags: string[] } = hasExistingLegacyAnalysis
+    ? {
+        summary: existingSummary,
+        tags: existingTags,
+      }
+    : { summary: "", tags: [] };
 
-  const [embeddingResult, analysisResult] = await Promise.allSettled([
-    canEmbed
-      ? embedMedia(mediaBytes, media.content_type)
-      : Promise.resolve(null),
-    analyzeMedia(mediaBytes, media.content_type),
-  ]);
+  let descriptionEmbedding: number[] | null = null;
 
-  const embedding =
-    embeddingResult.status === "fulfilled" ? embeddingResult.value : null;
-  const analysis =
-    analysisResult.status === "fulfilled"
-      ? analysisResult.value
-      : { summary: "", tags: [] };
-
-  let descriptionEmbedding: number[] | null = null;   
-
-  if (embeddingResult.status === "rejected") {
-    console.error(`[analyze] Embedding failed:`, embeddingResult.reason);
-  } else {
-    console.log(`[analyze] Embedding: ${embedding ? `${embedding.length} dims` : "skipped"}`);
-  }
-
-  if (analysisResult.status === "rejected") {
-    console.error(`[analyze] Vision analysis failed:`, analysisResult.reason);
-  } else {
+  if (hasExistingLegacyAnalysis) {
+    console.log("[analyze] Reusing existing legacy analysis from media_files");
     console.log(`[analyze] Summary: "${analysis.summary.slice(0, 80)}..."`);
     console.log(`[analyze] Tags: [${analysis.tags.join(", ")}]`);
   }
 
-  let taxonomyPipelineResult: Awaited<ReturnType<typeof runTaxonomyPipeline>> | null = null;
-
-  try {
-    console.log("[analyze] Running taxonomy pipeline...");
-
-    taxonomyPipelineResult = await runTaxonomyPipeline(
-      mediaBytes,
-      media.content_type
-    );
-
-    console.log(
-      `[analyze] Taxonomy pipeline completed: ${taxonomyPipelineResult.tasks.length}`
-    );
-
-    const descriptionEmbeddingText = buildDescriptionEmbeddingText({
-      summary: analysis.summary || "",
-      tags: analysis.tags ?? [],
-      explicitnessLevel: taxonomyPipelineResult.highestExplicitnessLevel,
-    });
-
-    if (descriptionEmbeddingText) {
-      descriptionEmbedding = await embedText(descriptionEmbeddingText);
-
-      console.log(
-        `[analyze] Description embedding: ${
-          descriptionEmbedding ? `${descriptionEmbedding.length} dims` : "empty"
-        }`
-      );
-    }
-  } catch (error) {
-    console.error("[analyze] Taxonomy pipeline failed:", error);
+  if (hasExistingEmbedding) {
+    console.log(`[analyze] Reusing existing media embedding: ${embedding.length} dims`);
   }
 
-  const updateData: Record<string, unknown> = {
-    ai_summary: analysis.summary || "Analysis completed",
-    ai_tags: analysis.tags.length > 0 ? analysis.tags : [],
-  };
-  if (embedding && embedding.length > 0) {
+  const shouldRunLegacyAnalysis = !hasExistingLegacyAnalysis;
+  const shouldRunMediaEmbedding = !hasExistingEmbedding && canEmbed;
+
+  console.log(
+    `[analyze] Legacy analysis needed=${shouldRunLegacyAnalysis} | media embedding needed=${shouldRunMediaEmbedding}`
+  );
+
+  const [embeddingResult, analysisResult] = await Promise.allSettled([
+    shouldRunMediaEmbedding
+      ? embedMedia(mediaBytes, media.content_type)
+      : Promise.resolve(embedding),
+    shouldRunLegacyAnalysis
+      ? analyzeMedia(mediaBytes, media.content_type)
+      : Promise.resolve(analysis),
+  ]);
+
+  if (embeddingResult.status === "fulfilled") {
+    embedding = embeddingResult.value;
+  } else {
+    console.error(`[analyze] Embedding failed:`, embeddingResult.reason);
+  }
+
+  if (analysisResult.status === "fulfilled") {
+    analysis = analysisResult.value;
+  } else {
+    console.error(`[analyze] Vision analysis failed:`, analysisResult.reason);
+  }
+
+  console.log(
+    `[analyze] Embedding: ${embedding && embedding.length > 0 ? `${embedding.length} dims` : "skipped"}`
+  );
+  console.log(`[analyze] Summary: "${analysis.summary.slice(0, 80)}..."`);
+  console.log(`[analyze] Tags: [${analysis.tags.join(", ")}]`);
+
+  let taxonomyPipelineResult: Awaited<ReturnType<typeof runTaxonomyPipeline>> | null = null;
+
+  if (hasExistingTaxonomy) {
+    console.log(`[analyze] Reusing existing taxonomy analysis for ${mediaId}`);
+  } else {
+    try {
+      console.log("[analyze] Running taxonomy pipeline...");
+
+      taxonomyPipelineResult = await runTaxonomyPipeline(
+        mediaBytes,
+        media.content_type
+      );
+
+      console.log(
+        `[analyze] Taxonomy pipeline completed: ${taxonomyPipelineResult.tasks.length}`
+      );
+
+      const descriptionEmbeddingText = buildDescriptionEmbeddingText({
+        summary: analysis.summary || "",
+        tags: analysis.tags ?? [],
+        explicitnessLevel: taxonomyPipelineResult.highestExplicitnessLevel,
+      });
+
+      if (descriptionEmbeddingText) {
+        descriptionEmbedding = await embedText(descriptionEmbeddingText);
+
+        console.log(
+          `[analyze] Description embedding: ${
+            descriptionEmbedding ? `${descriptionEmbedding.length} dims` : "empty"
+          }`
+        );
+      }
+    } catch (error) {
+      console.error("[analyze] Taxonomy pipeline failed:", error);
+    }
+  }
+
+  const updateData: Record<string, unknown> = {};
+
+  if (!hasExistingLegacyAnalysis) {
+    updateData.ai_summary = analysis.summary || "Analysis completed";
+    updateData.ai_tags = analysis.tags.length > 0 ? analysis.tags : [];
+  }
+
+  if (!hasExistingEmbedding && embedding && embedding.length > 0) {
     updateData.embedding = JSON.stringify(embedding);
   }
 
-  const { error: updateError } = await supabase
-    .from("media_files")
-    .update(updateData)
-    .eq("id", mediaId);
+  if (Object.keys(updateData).length > 0) {
+    const { error: updateError } = await supabase
+      .from("media_files")
+      .update(updateData)
+      .eq("id", mediaId);
 
-  if (updateError) {
-    console.error(`[analyze] DB update failed:`, updateError.message);
+    if (updateError) {
+      console.error(`[analyze] DB update failed:`, updateError.message);
+    } else {
+      console.log(`[analyze] DB updated successfully for ${mediaId}`);
+    }
   } else {
-    console.log(`[analyze] DB updated successfully for ${mediaId}`);
+    console.log(`[analyze] Skipped legacy DB update for ${mediaId} because values already existed`);
   }
 
   if (taxonomyPipelineResult && taxonomyPipelineResult.tasks.length > 0) {

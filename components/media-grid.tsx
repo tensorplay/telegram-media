@@ -23,6 +23,7 @@ export interface MediaItem {
   created_at: string;
   ai_summary?: string | null;
   ai_tags?: string[] | null;
+  has_taxonomy?: boolean;
 }
 
 export function formatSize(bytes: number) {
@@ -145,14 +146,24 @@ export function MediaGrid({
                     <Play className="h-10 w-10 text-white drop-shadow" />
                   </div>
                 )}
-                {isVideo && (
-                  <Badge
-                    variant="secondary"
-                    className="absolute top-2 right-2 text-xs"
-                  >
-                    Video
-                  </Badge>
-                )}
+                <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
+                  {isVideo && (
+                    <Badge
+                      variant="secondary"
+                      className="text-xs"
+                    >
+                      Video
+                    </Badge>
+                  )}
+                  {item.has_taxonomy && (
+                    <Badge
+                      variant="default"
+                      className="text-[10px]"
+                    >
+                      Taxonomy
+                    </Badge>
+                  )}
+                </div>
               </button>
               <div className="p-2 sm:p-3">
                 <p
