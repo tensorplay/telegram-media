@@ -71,13 +71,6 @@ export async function runAnalysis(mediaId: string): Promise<void> {
     return;
   }
 
-  const { data: existingTaxonomy } = await supabase
-    .from("media_content_analysis")
-    .select("media_file_id")
-    .eq("media_file_id", mediaId)
-    .maybeSingle();
-
-  const hasExistingTaxonomy = !!existingTaxonomy;
 
   console.log(`[analyze] Fetching from R2: ${media.r2_key} (${media.content_type})`);
   const signedUrl = await getSignedViewUrl(media.r2_key, 600);
@@ -93,6 +86,29 @@ export async function runAnalysis(mediaId: string): Promise<void> {
 
   const originalFileHash = createHash("sha256").update(mediaBytes).digest("hex");
   console.log(`[analyze] original_file_hash=${originalFileHash}`);
+
+  const { data: existingTaxonomy, error: existingTaxonomyError } = await supabase
+    .from("media_content_analysis")
+    .select("id, media_file_id, original_file_hash")
+    .eq("original_file_hash", originalFileHash)
+    .maybeSingle();
+
+  if (existingTaxonomyError) {
+    console.error(
+      `[analyze] Failed to check existing taxonomy for ${mediaId}:`,
+      existingTaxonomyError.message
+    );
+    return;
+  }
+
+  const hasExistingTaxonomy = !!existingTaxonomy;
+
+  console.log(
+    `[analyze] Existing taxonomy check for ${mediaId}: ` +
+      `hasExistingTaxonomy=${hasExistingTaxonomy}, ` +
+      `existingMediaFileId=${existingTaxonomy?.media_file_id ?? "null"}, ` +
+      `originalFileHash=${originalFileHash}`
+  );
 
   const isVideo = media.content_type.startsWith("video/");
   const isImage = media.content_type.startsWith("image/");
