@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import {
   Play,
@@ -110,6 +111,7 @@ export const MediaGrid = forwardRef<
   const [analyzing, setAnalyzing] = useState<string | null>(null);
   const [focusIndex, setFocusIndex] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const router = useRouter();
 
   useImperativeHandle(
     ref,
@@ -121,25 +123,30 @@ export const MediaGrid = forwardRef<
     []
   );
 
-  const retryAnalysis = useCallback(async (id: string) => {
-    setAnalyzing(id);
-    try {
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mediaId: id }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        window.location.reload();
-      } else {
-        alert(`Analysis failed: ${data.error}`);
+  const retryAnalysis = useCallback(
+    async (id: string) => {
+      setAnalyzing(id);
+      try {
+        const res = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mediaId: id }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          router.refresh();
+        } else {
+          alert(`Analysis failed: ${data.error}`);
+        }
+      } catch (err) {
+        alert(
+          `Analysis error: ${err instanceof Error ? err.message : "Unknown"}`
+        );
       }
-    } catch (err) {
-      alert(`Analysis error: ${err instanceof Error ? err.message : "Unknown"}`);
-    }
-    setAnalyzing(null);
-  }, []);
+      setAnalyzing(null);
+    },
+    [router]
+  );
 
   const visible = useMemo(() => {
     if (!hideVariants) return media;

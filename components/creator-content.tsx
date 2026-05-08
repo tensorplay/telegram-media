@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { MediaSearch } from "@/components/media-search";
 import {
   MediaGrid,
@@ -99,6 +100,7 @@ export function CreatorContent({
   const [suggestionBusy, setSuggestionBusy] = useState<string | null>(null);
   const [comfyOpen, setComfyOpen] = useState(false);
   const gridRef = useRef<MediaGridHandle>(null);
+  const router = useRouter();
 
   useEffect(() => {
     fetch(`/api/suggest-folders?creatorId=${creatorId}`)
@@ -113,10 +115,10 @@ export function CreatorContent({
   }, [creatorId]);
 
   const refresh = useCallback(() => {
-    // Full reload covers both folder and media mutations. The page is a
-    // server component, so SSR data comes back fresh.
-    window.location.reload();
-  }, []);
+    // Refetch the server component tree without remounting client state, so
+    // selection, inspector open state, and scroll position are preserved.
+    router.refresh();
+  }, [router]);
 
   const refreshFolders = useCallback(async () => {
     const res = await fetch(`/api/folders?creatorId=${creatorId}`);
