@@ -9,6 +9,10 @@ import { writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import {
+  analyzeMediaWithTogether,
+  analyzeMediaWithTogetherCustomPrompt,
+} from "@/lib/together";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
@@ -319,6 +323,23 @@ Return ONLY the raw JSON object, no markdown fences or extra text.`,
       console.warn(`[gemini.analyzeMedia] Gemini returned no usable text (${blockInfo})`);
     }
 
+    // Gemini hard-blocks fully explicit content even with safetySettings=OFF.
+    // When that happens (or any other non-STOP finish), route the image to
+    // Together's Qwen vision model which doesn't enforce sexual-content rules.
+    // We don't fall back for video — Together's chat completions API doesn't
+    // accept inline videos in this client.
+    if ((!text || blockInfo) && !isVideo) {
+      console.log("[gemini.analyzeMedia] Falling back to Together (Qwen)");
+      const fallback = await analyzeMediaWithTogether(mediaBytes, mimeType);
+      if (fallback) {
+        console.log(
+          `[gemini.analyzeMedia] Together fallback succeeded: ${fallback.tags.length} tags`
+        );
+        return fallback;
+      }
+      console.warn("[gemini.analyzeMedia] Together fallback returned nothing");
+    }
+
     if (!text) {
       return { summary: "", tags: [] };
     }
@@ -386,6 +407,26 @@ export async function analyzeMediaWithCustomPrompt(
     if (blockInfo) {
       console.warn(
         `[gemini.analyzeMediaWithCustomPrompt] Gemini returned no usable text (${blockInfo})`
+      );
+    }
+
+    if ((!text || blockInfo) && !isVideo) {
+      console.log(
+        "[gemini.analyzeMediaWithCustomPrompt] Falling back to Together (Qwen)"
+      );
+      const fallback = await analyzeMediaWithTogetherCustomPrompt(
+        mediaBytes,
+        mimeType,
+        prompt
+      );
+      if (fallback) {
+        console.log(
+          `[gemini.analyzeMediaWithCustomPrompt] Together fallback succeeded (${fallback.length} chars)`
+        );
+        return fallback;
+      }
+      console.warn(
+        "[gemini.analyzeMediaWithCustomPrompt] Together fallback returned nothing"
       );
     }
 
