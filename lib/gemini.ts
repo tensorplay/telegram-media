@@ -1,4 +1,10 @@
-import { GoogleGenAI } from "@google/genai";
+import {
+  GoogleGenAI,
+  HarmBlockThreshold,
+  HarmCategory,
+  type GenerateContentResponse,
+  type SafetySetting,
+} from "@google/genai";
 import { writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +15,41 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 const EMBEDDING_MODEL = "gemini-embedding-2-preview";
 const VISION_MODEL = "gemini-2.5-flash";
 const EMBEDDING_DIMS = 768;
+
+// Most of our content is creator media that trips Gemini's default sexual /
+// suggestive filters. We disable every configurable category so analysis
+// doesn't return empty text on borderline images. Note: Gemini still has
+// non-configurable hard filters that can block fully explicit nudity — those
+// will surface as `finishReason: "SAFETY"` and are logged below so we can
+// route them elsewhere.
+const SAFETY_SETTINGS: SafetySetting[] = [
+  HarmCategory.HARM_CATEGORY_HARASSMENT,
+  HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+  HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+  HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+].map((category) => ({
+  category,
+  threshold: HarmBlockThreshold.OFF,
+}));
+
+function describeBlock(response: GenerateContentResponse): string | null {
+  const promptBlock = response.promptFeedback?.blockReason;
+  if (promptBlock) {
+    return `prompt_blocked=${promptBlock}`;
+  }
+
+  const candidate = response.candidates?.[0];
+  const finishReason = candidate?.finishReason;
+  if (finishReason && finishReason !== "STOP") {
+    const ratings = (candidate?.safetyRatings ?? [])
+      .filter((r) => r.blocked || (r.probability && r.probability !== "NEGLIGIBLE"))
+      .map((r) => `${r.category}=${r.probability}${r.blocked ? "(blocked)" : ""}`)
+      .join(", ");
+    return `finish_reason=${finishReason}${ratings ? ` ratings=[${ratings}]` : ""}`;
+  }
+
+  return null;
+}
 
 async function uploadToGeminiFileAPI(
   mediaBytes: Buffer,
@@ -104,6 +145,7 @@ ${listing}`;
   const response = await ai.models.generateContent({
     model: VISION_MODEL,
     contents: [{ role: "user", parts: [{ text: prompt }] }],
+    config: { safetySettings: SAFETY_SETTINGS },
   });
 
   const text = response.text?.trim() ?? "{}";
@@ -181,6 +223,7 @@ ${listing}`;
   const response = await ai.models.generateContent({
     model: VISION_MODEL,
     contents: [{ role: "user", parts: [{ text: prompt }] }],
+    config: { safetySettings: SAFETY_SETTINGS },
   });
 
   const text = response.text?.trim() ?? "[]";
@@ -267,9 +310,18 @@ Return ONLY the raw JSON object, no markdown fences or extra text.`,
           ],
         },
       ],
+      config: { safetySettings: SAFETY_SETTINGS },
     });
 
-    const text = response.text?.trim() ?? "{}";
+    const text = response.text?.trim() ?? "";
+    const blockInfo = describeBlock(response);
+    if (blockInfo) {
+      console.warn(`[gemini.analyzeMedia] Gemini returned no usable text (${blockInfo})`);
+    }
+
+    if (!text) {
+      return { summary: "", tags: [] };
+    }
 
     try {
       const cleaned = text
@@ -326,9 +378,18 @@ export async function analyzeMediaWithCustomPrompt(
           ],
         },
       ],
+      config: { safetySettings: SAFETY_SETTINGS },
     });
 
-    return response.text?.trim() ?? "";
+    const text = response.text?.trim() ?? "";
+    const blockInfo = describeBlock(response);
+    if (blockInfo) {
+      console.warn(
+        `[gemini.analyzeMediaWithCustomPrompt] Gemini returned no usable text (${blockInfo})`
+      );
+    }
+
+    return text;
   } finally {
     if (fileToCleanup) {
       await cleanupGeminiFile(fileToCleanup);
