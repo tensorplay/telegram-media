@@ -21,6 +21,7 @@ import { ShootsView } from "@/components/shoots-view";
 import { GridPlanner } from "@/components/grid-planner";
 import { BurstCullDialog } from "@/components/burst-cull";
 import { TriageWizard } from "@/components/triage-wizard";
+import { ComfyGenerateDialog } from "@/components/comfy-generate-dialog";
 import { Button } from "@/components/ui/button";
 import {
   CheckSquare,
@@ -96,6 +97,7 @@ export function CreatorContent({
   const [burstItems, setBurstItems] = useState<MediaItem[] | null>(null);
   const [pendingTriage, setPendingTriage] = useState<MediaItem[] | null>(null);
   const [suggestionBusy, setSuggestionBusy] = useState<string | null>(null);
+  const [comfyOpen, setComfyOpen] = useState(false);
   const gridRef = useRef<MediaGridHandle>(null);
 
   useEffect(() => {
@@ -574,6 +576,15 @@ export function CreatorContent({
             </Button>
             <Button
               size="sm"
+              variant="outline"
+              onClick={() => setComfyOpen(true)}
+              title="Generate with ComfyUI (face / head swap)"
+            >
+              <Wand2 className="h-3.5 w-3.5 mr-1.5" />
+              Generate
+            </Button>
+            <Button
+              size="sm"
               variant="ghost"
               onClick={() => setKeyboardHelpOpen((v) => !v)}
               title="Keyboard shortcuts"
@@ -924,6 +935,19 @@ export function CreatorContent({
           onDone={refresh}
         />
       )}
+
+      {/* ComfyUI generate dialog */}
+      <ComfyGenerateDialog
+        open={comfyOpen}
+        onOpenChange={setComfyOpen}
+        creatorId={creatorId}
+        creatorSlug={creatorSlug}
+        media={media}
+        defaultBodyMediaId={
+          selectedItems.length === 1 ? selectedItems[0].id : null
+        }
+        onSaved={refresh}
+      />
 
       {/* Keyboard help */}
       {keyboardHelpOpen && (

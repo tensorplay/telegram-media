@@ -48,6 +48,21 @@ export async function getSignedViewUrl(
   );
 }
 
+export async function putToR2(
+  key: string,
+  body: Buffer | Uint8Array,
+  contentType: string
+) {
+  await getR2Client().send(
+    new PutObjectCommand({
+      Bucket: getBucket(),
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    })
+  );
+}
+
 export async function deleteFromR2(key: string) {
   await getR2Client().send(
     new DeleteObjectCommand({ Bucket: getBucket(), Key: key })
