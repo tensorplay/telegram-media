@@ -141,6 +141,79 @@ ${listing}`;
 }
 
 /**
+ * Ask Gemini to suggest useful "collections" a talent agency would actually
+ * file this creator's library into — combinations of co-occurring tags that
+ * map to real-world buckets (e.g. "Outdoor + athleisure", "Studio headshots",
+ * "Coffee shop casual"). Returns an array of suggestions with the tags they
+ * require and a short human-friendly name.
+ */
+export async function suggestAgencyCollections(
+  tagCounts: { tag: string; count: number }[],
+  totalFiles: number
+): Promise<
+  { name: string; description: string; requireTags: string[] }[]
+> {
+  if (tagCounts.length === 0) return [];
+
+  const listing = tagCounts
+    .slice(0, 120)
+    .map((t) => `${t.tag} (${t.count})`)
+    .join("\n");
+
+  const prompt = `You are a senior talent manager at a creator agency, organizing a SFW influencer's content library of ${totalFiles} photos and videos. Below is every tag Gemini has already attached, with counts.
+
+Propose 5 to 8 "collections" that a talent team would realistically file this library into — not generic single-tag buckets, but meaningful combinations that match how IG / TikTok / YouTube content gets planned and retrieved. Examples of good collections: "Outdoor athleisure" (for fitness brand pitches), "Studio headshots" (hireable assets), "Coffee shop casual" (lifestyle stories), "Evening glam" (grid-worthy posts). Examples of bad collections: "Woman" (too broad), "Indoor" (meaningless), "Smiling" (ambient).
+
+Return a JSON array. Each entry has:
+  - "name": 2-4 word title, Title Case.
+  - "description": one short sentence about why this collection is useful.
+  - "requireTags": 1-3 tags that a file must have (all of them) to belong. Use only tags from the list provided.
+
+Rules:
+- Prefer combinations (2+ requireTags) over single tags; single tags are only OK if they're highly specific (e.g. "bikini", "gym").
+- Skip any bucket that would include more than 40% of the library or fewer than 5 files (roughly).
+- Don't propose overlapping-twin collections — each should cover a distinct slice.
+- Return ONLY the raw JSON array, no markdown fences, no prose.
+
+Tags:
+${listing}`;
+
+  const response = await ai.models.generateContent({
+    model: VISION_MODEL,
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+  });
+
+  const text = response.text?.trim() ?? "[]";
+  const cleaned = text.replace(/^```json?\n?/i, "").replace(/\n?```$/i, "");
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed)) return [];
+    const validTags = new Set(tagCounts.map((t) => t.tag));
+    const out: { name: string; description: string; requireTags: string[] }[] = [];
+    for (const item of parsed) {
+      if (!item || typeof item !== "object") continue;
+      const name = typeof item.name === "string" ? item.name.trim() : "";
+      const description =
+        typeof item.description === "string" ? item.description.trim() : "";
+      const requireTagsRaw = Array.isArray(item.requireTags)
+        ? item.requireTags
+        : [];
+      const requireTags = requireTagsRaw
+        .filter((t: unknown): t is string => typeof t === "string")
+        .map((t: string) => t.trim().toLowerCase())
+        .filter((t: string) => validTags.has(t));
+      if (!name || requireTags.length === 0) continue;
+      out.push({ name, description, requireTags });
+    }
+    return out.slice(0, 8);
+  } catch {
+    console.error("[suggestAgencyCollections] Failed to parse:", text);
+    return [];
+  }
+}
+
+/**
  * Embed a text query into the same vector space as media.
  */
 export async function embedText(query: string): Promise<number[]> {

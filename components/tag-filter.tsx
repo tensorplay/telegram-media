@@ -4,6 +4,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Check, Minus, Tag, X } from "lucide-react";
+import {
+  FACET_ORDER,
+  FACET_LABELS,
+  groupContentTags,
+  isReservedTag,
+  type ContentFacet,
+} from "@/lib/facets";
 
 export type TagFilterState = "neutral" | "include" | "exclude";
 
@@ -47,19 +54,36 @@ export function TagFilter({
     };
   }, [open]);
 
-  const filtered = useMemo(() => {
+  // Exclude system tags from the content filter — those live in the Library nav.
+  const contentTags = useMemo(
+    () => allTags.filter((t) => !isReservedTag(t.tag)),
+    [allTags]
+  );
+
+  const grouped = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = q
-      ? allTags.filter((t) => t.tag.toLowerCase().includes(q))
-      : allTags;
-    return list.slice(0, 200);
-  }, [allTags, query]);
+    const filtered = q
+      ? contentTags.filter((t) => t.tag.toLowerCase().includes(q))
+      : contentTags;
+    const groups = groupContentTags(filtered.map((t) => t.tag));
+    const out: { facet: ContentFacet; tags: { tag: string; count: number }[] }[] = [];
+    for (const facet of FACET_ORDER) {
+      const list = groups[facet]
+        .map((tag) => ({
+          tag,
+          count: filtered.find((f) => f.tag === tag)?.count ?? 0,
+        }))
+        .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+      if (list.length > 0) out.push({ facet, tags: list });
+    }
+    return out;
+  }, [contentTags, query]);
 
   const totalActive = includeTags.size + excludeTags.size;
-  const hasAny = allTags.length > 0;
+  const hasAny = contentTags.length > 0;
 
   return (
-    <div className="mb-4">
+    <div className="mb-3">
       <div className="flex items-center gap-2 flex-wrap">
         <div className="relative">
           <Button
@@ -81,7 +105,7 @@ export function TagFilter({
           {open && (
             <div
               ref={panelRef}
-              className="absolute left-0 top-full mt-1.5 z-20 w-72 rounded-md border bg-popover text-popover-foreground shadow-md"
+              className="absolute left-0 top-full mt-1.5 z-20 w-80 rounded-md border bg-popover text-popover-foreground shadow-md"
             >
               <div className="p-2 border-b">
                 <Input
@@ -92,50 +116,58 @@ export function TagFilter({
                   className="h-8"
                 />
                 <p className="text-[10px] text-muted-foreground mt-1.5 px-0.5">
-                  Click once to include, again to exclude, again to clear.
+                  Click to include, again to exclude, again to clear. Tags are
+                  grouped by facet.
                 </p>
               </div>
-              <div className="max-h-72 overflow-y-auto py-1">
-                {filtered.length === 0 ? (
-                  <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+              <div className="max-h-80 overflow-y-auto py-1">
+                {grouped.length === 0 ? (
+                  <div className="px-3 py-6 text-sm text-muted-foreground text-center">
                     No tags found
                   </div>
                 ) : (
-                  filtered.map(({ tag, count }) => {
-                    const included = includeTags.has(tag);
-                    const excluded = excludeTags.has(tag);
-                    return (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => onCycle(tag)}
-                        className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-left hover:bg-muted transition-colors"
-                      >
-                        <span
-                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                            included
-                              ? "bg-primary border-primary text-primary-foreground"
-                              : excluded
-                                ? "bg-destructive border-destructive text-destructive-foreground"
-                                : "border-input"
-                          }`}
-                        >
-                          {included && <Check className="h-3 w-3" />}
-                          {excluded && <Minus className="h-3 w-3" />}
-                        </span>
-                        <span
-                          className={`flex-1 truncate ${
-                            excluded ? "line-through text-muted-foreground" : ""
-                          }`}
-                        >
-                          {tag}
-                        </span>
-                        <span className="text-xs text-muted-foreground tabular-nums">
-                          {count}
-                        </span>
-                      </button>
-                    );
-                  })
+                  grouped.map(({ facet, tags }) => (
+                    <div key={facet} className="py-1">
+                      <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        {FACET_LABELS[facet]}
+                      </div>
+                      {tags.slice(0, 60).map(({ tag, count }) => {
+                        const included = includeTags.has(tag);
+                        const excluded = excludeTags.has(tag);
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => onCycle(tag)}
+                            className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-left hover:bg-muted transition-colors"
+                          >
+                            <span
+                              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                                included
+                                  ? "bg-primary border-primary text-primary-foreground"
+                                  : excluded
+                                    ? "bg-destructive border-destructive text-destructive-foreground"
+                                    : "border-input"
+                              }`}
+                            >
+                              {included && <Check className="h-3 w-3" />}
+                              {excluded && <Minus className="h-3 w-3" />}
+                            </span>
+                            <span
+                              className={`flex-1 truncate ${
+                                excluded ? "line-through text-muted-foreground" : ""
+                              }`}
+                            >
+                              {tag}
+                            </span>
+                            <span className="text-xs text-muted-foreground tabular-nums">
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))
                 )}
               </div>
             </div>

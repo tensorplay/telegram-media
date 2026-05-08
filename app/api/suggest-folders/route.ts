@@ -1,76 +1,129 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { suggestAgencyCollections } from "@/lib/gemini";
+import { clusterShoots } from "@/lib/shoots";
 
+export const maxDuration = 60;
+
+/**
+ * Returns two kinds of suggestions:
+ *
+ *   shoots[]      — auto-detected shoot clusters. Previewed (not applied) in
+ *                   the UI; user confirms which ones to promote.
+ *   collections[] — Gemini-proposed agency-mode collections based on tag
+ *                   combinations (e.g. "Outdoor athleisure" = outdoor+gym).
+ *                   Also previewed before anything is written.
+ *
+ * Both shapes are safe to render directly in a preview sheet and only
+ * mutate data when the user hits Apply.
+ */
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const creatorId = request.nextUrl.searchParams.get("creatorId");
-  if (!creatorId) return NextResponse.json({ error: "Missing creatorId" }, { status: 400 });
+  if (!creatorId)
+    return NextResponse.json({ error: "Missing creatorId" }, { status: 400 });
 
-  // PostgREST caps selects at 1000 rows, so paginate to pull every
-  // uncategorized file for this creator.
   const PAGE_SIZE = 1000;
-  const uncategorized: { id: string; ai_tags: string[] | null }[] = [];
+  const rows: {
+    id: string;
+    created_at: string;
+    ai_tags: string[] | null;
+    filename: string;
+    folder_id: string | null;
+  }[] = [];
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
       .from("media_files")
-      .select("id, ai_tags")
+      .select("id, created_at, ai_tags, filename, folder_id")
       .eq("creator_id", creatorId)
-      .is("folder_id", null)
-      .not("ai_tags", "is", null)
       .range(from, from + PAGE_SIZE - 1);
     if (error || !data) break;
-    uncategorized.push(...data);
+    rows.push(...data);
     if (data.length < PAGE_SIZE) break;
   }
 
-  if (uncategorized.length === 0) {
-    return NextResponse.json({ suggestions: [] });
+  if (rows.length === 0) {
+    return NextResponse.json({ shoots: [], collections: [] });
   }
 
-  // Count tag frequency across uncategorized files. Normalize casing/whitespace
-  // so "Indoor" and "indoor" collapse into one bucket.
-  const tagCounts = new Map<string, { display: string; ids: string[] }>();
-  uncategorized.forEach((file) => {
-    const tags = file.ai_tags;
-    if (!tags) return;
-    for (const raw of tags) {
-      if (typeof raw !== "string") continue;
-      const trimmed = raw.trim();
-      if (!trimmed) continue;
-      const key = trimmed.toLowerCase();
-      const entry = tagCounts.get(key) ?? { display: trimmed, ids: [] };
-      entry.ids.push(file.id);
-      tagCounts.set(key, entry);
-    }
-  });
-
-  // Good folder candidates are tags that split the collection meaningfully —
-  // not so broad they cover most of it (e.g. "indoor", "woman") and not so
-  // rare they'd make a trivial folder. Aim for ~5%-35% of uncategorized.
-  const total = uncategorized.length;
-  const minCount = Math.max(5, Math.floor(total * 0.02));
-  const maxCount = Math.max(minCount + 1, Math.floor(total * 0.25));
-
-  let candidates = [...tagCounts.values()].filter(
-    (t) => t.ids.length >= minCount && t.ids.length <= maxCount
+  // Shoot suggestions — restrict to *uncategorized* items that don't already
+  // carry a shoot:* tag, otherwise the UI gets pushy about re-filing work
+  // the user already did.
+  const candidateItems = rows.filter(
+    (r) =>
+      !r.folder_id &&
+      !(r.ai_tags ?? []).some(
+        (t) => typeof t === "string" && t.toLowerCase().startsWith("shoot:")
+      )
   );
-
-  // If the sweet-spot is too strict for a small library, relax the ceiling.
-  if (candidates.length < 3) {
-    candidates = [...tagCounts.values()].filter((t) => t.ids.length >= 2);
-  }
-
-  const suggestions = candidates
-    .sort((a, b) => b.ids.length - a.ids.length)
-    .slice(0, 8)
-    .map((t) => ({
-      folderName: t.display.charAt(0).toUpperCase() + t.display.slice(1),
-      mediaIds: t.ids,
-      count: t.ids.length,
+  const shoots = clusterShoots(candidateItems)
+    .filter((s) => s.items.length >= 3 && !s.promoted)
+    .slice(0, 12)
+    .map((s) => ({
+      slug: s.slug,
+      name: s.name,
+      count: s.items.length,
+      topTags: s.topTags.slice(0, 4),
+      startsAt: s.startsAt,
+      endsAt: s.endsAt,
+      mediaIds: s.items.map((i) => i.id),
     }));
 
-  return NextResponse.json({ suggestions });
+  // Collection suggestions — Gemini chews on tag frequencies.
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const tags = r.ai_tags ?? [];
+    for (const raw of tags) {
+      if (typeof raw !== "string") continue;
+      const k = raw.trim().toLowerCase();
+      if (!k || k.includes(":") || k === "hero" || k === "variant") continue;
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+  }
+  const tagList = [...counts.entries()]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count);
+
+  let collections: {
+    name: string;
+    description: string;
+    requireTags: string[];
+    count: number;
+    mediaIds: string[];
+  }[] = [];
+
+  try {
+    const suggestions = await suggestAgencyCollections(tagList, rows.length);
+    // Compute membership for preview.
+    collections = suggestions
+      .map((s) => {
+        const required = s.requireTags.map((t) => t.toLowerCase());
+        const memberIds = rows
+          .filter((r) => {
+            const tags = (r.ai_tags ?? []).map((t) =>
+              typeof t === "string" ? t.toLowerCase() : ""
+            );
+            return required.every((rt) => tags.includes(rt));
+          })
+          .map((r) => r.id);
+        return {
+          name: s.name,
+          description: s.description,
+          requireTags: required,
+          count: memberIds.length,
+          mediaIds: memberIds,
+        };
+      })
+      .filter((c) => c.count >= 5)
+      .slice(0, 8);
+  } catch (err) {
+    console.error("[suggest-folders] collection error:", err);
+  }
+
+  return NextResponse.json({ shoots, collections });
 }
