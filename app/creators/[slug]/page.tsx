@@ -78,7 +78,7 @@ export default async function CreatorPage({
   return (
     <>
       <Navbar email={user?.email} />
-      <main className="mx-auto max-w-6xl px-3 sm:px-4 py-4 sm:py-8">
+      <main className="mx-auto w-full max-w-6xl px-3 sm:px-4 py-4 sm:py-8">
         <div className="flex items-center gap-2 mb-4 sm:mb-6">
           <Link href="/creators">
             <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
