@@ -33,9 +33,9 @@ export default async function CreatorsPage() {
   return (
     <>
       <Navbar email={user?.email} />
-      <main className="mx-auto max-w-5xl px-4 py-8">
-        <h1 className="text-2xl font-semibold mb-6">Creators</h1>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <main className="mx-auto max-w-5xl px-3 sm:px-4 py-4 sm:py-8">
+        <h1 className="text-xl sm:text-2xl font-semibold mb-4 sm:mb-6">Creators</h1>
+        <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {creators?.map((creator) => {
             const count = countMap.get(creator.id) ?? 0;
             return (

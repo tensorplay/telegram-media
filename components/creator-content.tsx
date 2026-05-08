@@ -519,7 +519,7 @@ export function CreatorContent({
     searchIds !== null || includeTags.size > 0 || excludeTags.size > 0;
 
   return (
-    <div className="flex gap-6">
+    <div className="md:flex md:gap-6">
       <LibraryNav
         folders={folders}
         creatorId={creatorId}
@@ -535,17 +535,17 @@ export function CreatorContent({
         shootNames={shootNames}
       />
 
-      <div className="flex-1 min-w-0">
+      <div className="md:flex-1 min-w-0">
         {/* Section header */}
         <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-          <div>
-            <h2 className="text-lg font-semibold">{headerLabel}</h2>
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold truncate">{headerLabel}</h2>
             <p className="text-xs text-muted-foreground">
               {displayMedia.length} file{displayMedia.length === 1 ? "" : "s"}
               {filterPipelineHasAny && ` · filtered from ${sectionFiltered.length}`}
             </p>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-wrap">
             {canUsePlanner && (
               <Button
                 size="sm"
@@ -553,9 +553,10 @@ export function CreatorContent({
                 onClick={() =>
                   setViewMode((m) => (m === "planner" ? "grid" : "planner"))
                 }
+                title="Planner"
               >
-                <Layers className="h-3.5 w-3.5 mr-1.5" />
-                Planner
+                <Layers className="h-3.5 w-3.5 sm:mr-1.5" />
+                <span className="hidden sm:inline">Planner</span>
               </Button>
             )}
             <Button
@@ -565,16 +566,17 @@ export function CreatorContent({
               disabled={active.kind === "channel" || active.kind === "folder"}
               title="Group by shoot"
             >
-              <Camera className="h-3.5 w-3.5 mr-1.5" />
-              Shoots
+              <Camera className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">Shoots</span>
             </Button>
             <Button
               size="sm"
               variant={viewMode === "grid" ? "default" : "outline"}
               onClick={() => setViewMode("grid")}
+              title="Grid view"
             >
-              <LayoutGrid className="h-3.5 w-3.5 mr-1.5" />
-              Grid
+              <LayoutGrid className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">Grid</span>
             </Button>
             <Button
               size="sm"
@@ -582,14 +584,15 @@ export function CreatorContent({
               onClick={() => setComfyOpen(true)}
               title="Generate with ComfyUI (face / head swap)"
             >
-              <Wand2 className="h-3.5 w-3.5 mr-1.5" />
-              Generate
+              <Wand2 className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">Generate</span>
             </Button>
             <Button
               size="sm"
               variant="ghost"
               onClick={() => setKeyboardHelpOpen((v) => !v)}
               title="Keyboard shortcuts"
+              className="hidden sm:inline-flex"
             >
               <Keyboard className="h-3.5 w-3.5" />
             </Button>
@@ -616,7 +619,7 @@ export function CreatorContent({
               setExcludeTags(new Set());
             }}
           />
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <label className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -628,6 +631,7 @@ export function CreatorContent({
             <Button
               size="sm"
               variant="outline"
+              title="Analyze all visible files"
               onClick={async () => {
                 try {
                   const mediaIds = displayMedia.map((m) => m.id);
@@ -655,16 +659,19 @@ export function CreatorContent({
                 }
               }}
             >
-              <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-              Analyze all visible
+              <Sparkles className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">Analyze all visible</span>
+              <span className="sm:hidden">Analyze</span>
             </Button>
             <Button
               size="sm"
               variant="outline"
               onClick={() => setCleanupOpen(true)}
+              title="Clean up tags"
             >
-              <Wand2 className="h-3.5 w-3.5 mr-1.5" />
-              Clean up tags
+              <Wand2 className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">Clean up tags</span>
+              <span className="sm:hidden">Cleanup</span>
             </Button>
           </div>
         </div>
@@ -692,9 +699,11 @@ export function CreatorContent({
                 });
               }}
               disabled={displayMedia.length === 0}
+              title="Select all visible"
             >
-              <CheckSquare className="h-3.5 w-3.5 mr-1.5" />
-              Select all visible
+              <CheckSquare className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">Select all visible</span>
+              <span className="sm:hidden">All</span>
             </Button>
             <QuickStatusToolbar
               onApply={async (status) => {
@@ -713,6 +722,7 @@ export function CreatorContent({
             <Button
               size="sm"
               variant="outline"
+              title="Analyze selected"
               onClick={async () => {
                 try {
                   const mediaIds = Array.from(selectedIds);
@@ -740,15 +750,18 @@ export function CreatorContent({
                 }
               }}
             >
-              <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-              Analyze selected
+              <Sparkles className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">Analyze selected</span>
+              <span className="sm:hidden">Analyze</span>
             </Button>
             <Button
               size="sm"
               variant="outline"
               onClick={() => setInspectorOpen(true)}
+              title="Open inspector"
             >
-              Open inspector
+              <span className="hidden sm:inline">Open inspector</span>
+              <span className="sm:hidden">Inspect</span>
             </Button>
             <div className="flex-1" />
             <Button size="sm" variant="ghost" onClick={clearSelection}>

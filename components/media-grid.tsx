@@ -349,14 +349,14 @@ export const MediaGrid = forwardRef<
                           setFocusIndex(index);
                           onToggleSelect(item.id);
                         }}
-                        className={`h-5 w-5 rounded border-2 flex items-center justify-center transition-all ${
+                        className={`h-6 w-6 sm:h-5 sm:w-5 rounded border-2 flex items-center justify-center transition-all ${
                           selected
                             ? "bg-primary border-primary text-primary-foreground opacity-100"
                             : "bg-white/80 border-neutral-400 hover:bg-white hover:border-primary"
                         } ${
                           selectionMode || selected
                             ? "opacity-100"
-                            : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                            : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
                         }`}
                       >
                         {selected && (
@@ -394,7 +394,7 @@ export const MediaGrid = forwardRef<
                     )}
                   </div>
 
-                  {/* top-right: status pill + video badge + taxonomy badge */}
+                  {/* top-right: status pill + video badge */}
                   <div className="absolute top-1.5 right-1.5 flex items-center gap-1 z-10">
                     {isVideo && (
                       <Badge
@@ -402,15 +402,6 @@ export const MediaGrid = forwardRef<
                         className="text-[9px] h-5 px-1.5"
                       >
                         Video
-                      </Badge>
-                    )}
-                    {item.has_taxonomy && (
-                      <Badge
-                        variant="default"
-                        className="text-[9px] h-5 px-1.5"
-                        title="Taxonomy analysis available"
-                      >
-                        Taxonomy
                       </Badge>
                     )}
                     {status && <StatusPill status={status} />}

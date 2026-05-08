@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,6 +23,7 @@ import {
   Megaphone,
   Archive,
   Star,
+  Menu,
 } from "lucide-react";
 import { CHANNELS, parseTags, type ChannelValue } from "@/lib/facets";
 import type { MediaItem } from "@/components/media-grid";
@@ -186,12 +187,17 @@ export function LibraryNav({
 }: LibraryNavProps) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [sectionsOpen, setSectionsOpen] = useState<Record<string, boolean>>({
     library: true,
     shoots: true,
     channels: false,
     campaigns: true,
   });
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [active]);
 
   // Compute counts off the parsed media once.
   const counts = useMemo(() => {
@@ -487,41 +493,62 @@ export function LibraryNav({
       {/* Desktop sidebar */}
       <div className="hidden md:block w-60 shrink-0">{sidebar}</div>
 
-      {/* Mobile: horizontal pills for the most-used destinations */}
-      <div className="md:hidden flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-none">
-        <MobilePill
-          active={active.kind === "all"}
-          onClick={() => onSelect({ kind: "all" })}
-        >
-          All ({media.length})
-        </MobilePill>
-        <MobilePill
-          active={active.kind === "inbox"}
-          onClick={() => onSelect({ kind: "inbox" })}
-        >
-          Inbox ({counts.inbox})
-        </MobilePill>
-        <MobilePill
-          active={active.kind === "heroes"}
-          onClick={() => onSelect({ kind: "heroes" })}
-        >
-          Heroes ({counts.heroes})
-        </MobilePill>
-        <MobilePill
-          active={active.kind === "shoots"}
-          onClick={() => onSelect({ kind: "shoots" })}
-        >
-          Shoots ({shootNames.length})
-        </MobilePill>
-        {CHANNELS.slice(0, 3).map((c) => (
+      {/* Mobile: horizontal pills + Browse drawer for the full nav. */}
+      <div className="md:hidden mb-3">
+        <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-none">
+          <Dialog open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+            <DialogTrigger
+              render={
+                <button
+                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border bg-card border-border hover:bg-muted"
+                  aria-label="Browse all sections"
+                >
+                  <Menu className="h-3.5 w-3.5" />
+                  Browse
+                </button>
+              }
+            />
+            <DialogContent className="sm:max-w-sm max-h-[80vh] overflow-y-auto p-3">
+              <DialogHeader>
+                <DialogTitle>Browse</DialogTitle>
+              </DialogHeader>
+              <div className="mt-2">{sidebar}</div>
+            </DialogContent>
+          </Dialog>
           <MobilePill
-            key={c.value}
-            active={active.kind === "channel" && active.channel === c.value}
-            onClick={() => onSelect({ kind: "channel", channel: c.value })}
+            active={active.kind === "all"}
+            onClick={() => onSelect({ kind: "all" })}
           >
-            {c.label} ({counts.byChannel.get(c.value) ?? 0})
+            All ({media.length})
           </MobilePill>
-        ))}
+          <MobilePill
+            active={active.kind === "inbox"}
+            onClick={() => onSelect({ kind: "inbox" })}
+          >
+            Inbox ({counts.inbox})
+          </MobilePill>
+          <MobilePill
+            active={active.kind === "heroes"}
+            onClick={() => onSelect({ kind: "heroes" })}
+          >
+            Heroes ({counts.heroes})
+          </MobilePill>
+          <MobilePill
+            active={active.kind === "shoots"}
+            onClick={() => onSelect({ kind: "shoots" })}
+          >
+            Shoots ({shootNames.length})
+          </MobilePill>
+          {CHANNELS.slice(0, 3).map((c) => (
+            <MobilePill
+              key={c.value}
+              active={active.kind === "channel" && active.channel === c.value}
+              onClick={() => onSelect({ kind: "channel", channel: c.value })}
+            >
+              {c.label} ({counts.byChannel.get(c.value) ?? 0})
+            </MobilePill>
+          ))}
+        </div>
       </div>
     </>
   );

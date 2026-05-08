@@ -78,15 +78,15 @@ export default async function CreatorPage({
   return (
     <>
       <Navbar email={user?.email} />
-      <main className="mx-auto max-w-6xl px-4 py-8">
-        <div className="flex items-center gap-2 mb-6">
+      <main className="mx-auto max-w-6xl px-3 sm:px-4 py-4 sm:py-8">
+        <div className="flex items-center gap-2 mb-4 sm:mb-6">
           <Link href="/creators">
-            <Button variant="ghost" size="icon" className="h-8 w-8">
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
               <ChevronLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <h1 className="text-2xl font-semibold">{creator.name}</h1>
-          <span className="text-sm text-muted-foreground ml-2">
+          <h1 className="text-xl sm:text-2xl font-semibold truncate">{creator.name}</h1>
+          <span className="text-xs sm:text-sm text-muted-foreground shrink-0">
             {media.length} files
           </span>
         </div>

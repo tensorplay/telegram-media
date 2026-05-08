@@ -157,20 +157,23 @@ function ShootRow({
 
   return (
     <section className="rounded-lg border bg-card overflow-hidden">
-      <header className="flex items-center gap-3 px-3 py-2.5">
+      <header className="flex items-center gap-2 px-2 sm:px-3 py-2 sm:py-2.5">
         <button
           onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-2 flex-1 min-w-0 text-left"
+          className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0 text-left"
         >
           {open ? (
             <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
           ) : (
             <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
           )}
-          <Camera className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <Camera className="h-4 w-4 shrink-0 text-muted-foreground hidden sm:inline" />
           <span className="font-medium text-sm truncate">{shoot.name}</span>
-          <span className="text-xs text-muted-foreground shrink-0">
+          <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">
             {shoot.items.length} files · {dateRange}
+          </span>
+          <span className="text-xs text-muted-foreground shrink-0 sm:hidden">
+            {shoot.items.length}
           </span>
           {heroCount > 0 && (
             <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 shrink-0">
@@ -179,12 +182,12 @@ function ShootRow({
             </span>
           )}
           {shoot.promoted && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 shrink-0 hidden sm:inline">
               saved
             </span>
           )}
         </button>
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
           {bursts.length > 0 && (
             <Button
               variant="ghost"
@@ -192,17 +195,19 @@ function ShootRow({
               onClick={() => onOpenBurstCull(bursts[0])}
               title={`${bursts.length} near-duplicate burst${bursts.length === 1 ? "" : "s"} detected`}
             >
-              <Wand2 className="h-3.5 w-3.5 mr-1.5" />
-              Cull ({bursts.length})
+              <Wand2 className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">Cull ({bursts.length})</span>
+              <span className="sm:hidden">{bursts.length}</span>
             </Button>
           )}
           <Button
             variant="ghost"
             size="sm"
             onClick={() => onSelectAllInShoot(shoot.items.map((i) => i.id))}
+            title="Select all in shoot"
           >
-            <CheckSquare className="h-3.5 w-3.5 mr-1.5" />
-            Select
+            <CheckSquare className="h-3.5 w-3.5 sm:mr-1.5" />
+            <span className="hidden sm:inline">Select</span>
           </Button>
           {!shoot.promoted && (
             <Button
@@ -211,8 +216,8 @@ function ShootRow({
               onClick={() => onPromoteShoot(shoot)}
               title="Save this shoot so it sticks across future sessions"
             >
-              <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-              Save
+              <Sparkles className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">Save</span>
             </Button>
           )}
           {shoot.promoted && (
