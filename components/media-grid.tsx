@@ -43,6 +43,7 @@ export interface MediaItem {
   created_at: string;
   ai_summary?: string | null;
   ai_tags?: string[] | null;
+  has_taxonomy?: boolean;
 }
 
 export function formatSize(bytes: number) {
@@ -369,7 +370,7 @@ export const MediaGrid = forwardRef<
                     )}
                   </div>
 
-                  {/* top-right: status pill + video badge */}
+                  {/* top-right: status pill + video badge + taxonomy badge */}
                   <div className="absolute top-1.5 right-1.5 flex items-center gap-1 z-10">
                     {isVideo && (
                       <Badge
@@ -377,6 +378,15 @@ export const MediaGrid = forwardRef<
                         className="text-[9px] h-5 px-1.5"
                       >
                         Video
+                      </Badge>
+                    )}
+                    {item.has_taxonomy && (
+                      <Badge
+                        variant="default"
+                        className="text-[9px] h-5 px-1.5"
+                        title="Taxonomy analysis available"
+                      >
+                        Taxonomy
                       </Badge>
                     )}
                     {status && <StatusPill status={status} />}

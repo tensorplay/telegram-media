@@ -106,16 +106,23 @@ export function LazyMedia({
   const src = `/api/media/${mediaId}${attempt > 0 ? `?r=${attempt}` : ""}`;
 
   const mediaEl = failed ? (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={manualRetry}
-      className={`flex flex-col items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors bg-neutral-100 dark:bg-neutral-800 ${
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          manualRetry(e as unknown as React.MouseEvent);
+        }
+      }}
+      className={`flex flex-col items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors bg-neutral-100 dark:bg-neutral-800 cursor-pointer ${
         className ?? "w-full h-full"
       }`}
     >
       <RefreshCw className="h-4 w-4" />
       <span>Retry</span>
-    </button>
+    </div>
   ) : isVideo ? (
     // eslint-disable-next-line jsx-a11y/media-has-caption
     <video

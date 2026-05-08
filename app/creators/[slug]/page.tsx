@@ -54,15 +54,27 @@ export default async function CreatorPage({
       .range(from, to);
   }
 
-  const [media, { data: folders }] = await Promise.all([
+  const [media, { data: folders }, { data: taxonomyRows }] = await Promise.all([
     fetchAllMedia(),
     supabase
       .from("media_folders")
       .select("*")
       .eq("creator_id", creator.id)
       .order("name"),
+    supabase
+      .from("media_content_analysis")
+      .select("media_file_id")
+      .eq("creator_id", creator.id),
   ]);
 
+  const taxonomyMediaIds = new Set(
+    (taxonomyRows ?? []).map((row) => row.media_file_id)
+  );
+
+  const mediaWithTaxonomy = media.map((item) => ({
+    ...item,
+    has_taxonomy: taxonomyMediaIds.has(item.id),
+  }));
   return (
     <>
       <Navbar email={user?.email} />
@@ -82,7 +94,7 @@ export default async function CreatorPage({
         <CreatorContent
           creatorSlug={slug}
           creatorId={creator.id}
-          media={media}
+          media={mediaWithTaxonomy}
           initialFolders={folders ?? []}
         />
       </main>

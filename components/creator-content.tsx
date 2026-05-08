@@ -615,6 +615,39 @@ export function CreatorContent({
             <Button
               size="sm"
               variant="outline"
+              onClick={async () => {
+                try {
+                  const mediaIds = displayMedia.map((m) => m.id);
+                  if (mediaIds.length === 0) {
+                    alert("No visible media to analyze.");
+                    return;
+                  }
+                  const res = await fetch("/api/analyze-bulk", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ mediaIds }),
+                  });
+                  const data = await res.json();
+                  if (!res.ok) {
+                    alert(data.error ?? "Bulk analysis failed.");
+                    return;
+                  }
+                  alert(
+                    `Analysis finished. Success: ${data.successCount}, Failed: ${data.failureCount}`
+                  );
+                  refresh();
+                } catch (error) {
+                  console.error("[analyze-bulk] error:", error);
+                  alert("Bulk analysis failed.");
+                }
+              }}
+            >
+              <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+              Analyze all visible
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
               onClick={() => setCleanupOpen(true)}
             >
               <Wand2 className="h-3.5 w-3.5 mr-1.5" />
@@ -664,6 +697,39 @@ export function CreatorContent({
                 refresh();
               }}
             />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                try {
+                  const mediaIds = Array.from(selectedIds);
+                  if (mediaIds.length === 0) {
+                    alert("No selected media to analyze.");
+                    return;
+                  }
+                  const res = await fetch("/api/analyze-bulk", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ mediaIds }),
+                  });
+                  const data = await res.json();
+                  if (!res.ok) {
+                    alert(data.error ?? "Bulk analysis failed.");
+                    return;
+                  }
+                  alert(
+                    `Analysis finished. Success: ${data.successCount}, Failed: ${data.failureCount}`
+                  );
+                  refresh();
+                } catch (error) {
+                  console.error("[analyze-bulk] error:", error);
+                  alert("Bulk analysis failed.");
+                }
+              }}
+            >
+              <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+              Analyze selected
+            </Button>
             <Button
               size="sm"
               variant="outline"
