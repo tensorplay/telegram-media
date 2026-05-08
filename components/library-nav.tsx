@@ -495,7 +495,7 @@ export function LibraryNav({
 
       {/* Mobile: horizontal pills + Browse drawer for the full nav. */}
       <div className="md:hidden mb-3">
-        <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-none">
+        <div className="flex gap-2 overflow-x-auto pb-2 -mx-3 px-3 sm:-mx-4 sm:px-4 scrollbar-none">
           <Dialog open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <DialogTrigger
               render={
