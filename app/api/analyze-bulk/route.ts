@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
     const mediaIds = body.mediaIds;
+    const force = body.force === true;
 
     if (!Array.isArray(mediaIds) || mediaIds.length === 0) {
       return NextResponse.json({ error: "Missing mediaIds" }, { status: 400 });
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest) {
 
     for (const mediaId of mediaIds) {
       try {
-        await runAnalysis(mediaId);
+        await runAnalysis(mediaId, { force });
         results.push({ mediaId, success: true });
       } catch (error) {
         results.push({

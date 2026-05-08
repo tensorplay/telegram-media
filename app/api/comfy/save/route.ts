@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { putToR2 } from "@/lib/r2";
 import { viewBuffer, type ComfyMode } from "@/lib/comfy";
+import { runAnalysis } from "@/lib/analyze";
 
-export const maxDuration = 60;
+// Save flow runs ComfyUI -> R2 -> DB insert -> AI analysis (Gemini), so the
+// budget needs to cover the analyze step too. Image analyze typically finishes
+// in 5-15s; videos can be longer.
+export const maxDuration = 120;
 
 interface SaveBody {
   creatorId?: string;
@@ -57,17 +61,11 @@ export async function POST(request: NextRequest) {
 
     await putToR2(r2Key, buffer, finalContentType);
 
-    const summary =
-      mode === "image"
-        ? "Generated via ComfyUI Flux 2 head swap"
-        : "Generated via ComfyUI LTX 2.3 head-swap video";
-    const tags =
-      mode === "image"
-        ? ["source:comfy", "tool:flux2-klein", "head-swap"]
-        : ["source:comfy", "tool:ltx-2.3", "head-swap"];
-
     const displayFilename = `${tool}-${ts}.${ext}`;
 
+    // Insert with empty ai_summary / ai_tags so the analyzer treats this as
+    // unanalyzed and runs Gemini for proper content tags. We add the
+    // provenance tags afterwards on top of whatever Gemini produces.
     const { data: inserted, error: dbError } = await supabase
       .from("media_files")
       .insert({
@@ -77,8 +75,6 @@ export async function POST(request: NextRequest) {
         content_type: finalContentType,
         size_bytes: buffer.length,
         uploaded_by: user.id,
-        ai_summary: summary,
-        ai_tags: tags,
       })
       .select("id")
       .single();
@@ -90,7 +86,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ mediaId: inserted.id, r2Key });
+    const mediaId: string = inserted.id;
+
+    // Run analysis synchronously so the file already has real content tags by
+    // the time the dialog refreshes the grid. Failure is non-fatal — the user
+    // can still re-analyze from the inspector.
+    try {
+      await runAnalysis(mediaId);
+    } catch (analyzeErr) {
+      console.error("[comfy/save] analyze failed:", analyzeErr);
+    }
+
+    // Append provenance tags on top of whatever Gemini produced (read-modify-
+    // write to avoid clobbering AI tags written above).
+    const provenanceTags =
+      mode === "image"
+        ? ["source:comfy", "tool:flux2-klein", "head-swap"]
+        : ["source:comfy", "tool:ltx-2.3", "head-swap"];
+    try {
+      const { data: row } = await supabase
+        .from("media_files")
+        .select("ai_tags")
+        .eq("id", mediaId)
+        .single();
+      const existing = Array.isArray(row?.ai_tags)
+        ? row.ai_tags.filter((t: unknown): t is string => typeof t === "string")
+        : [];
+      const seen = new Set<string>(existing.map((t) => t.toLowerCase()));
+      const merged = [...existing];
+      for (const t of provenanceTags) {
+        if (!seen.has(t)) {
+          seen.add(t);
+          merged.push(t);
+        }
+      }
+      await supabase
+        .from("media_files")
+        .update({ ai_tags: merged })
+        .eq("id", mediaId);
+    } catch (tagErr) {
+      console.error("[comfy/save] provenance tag append failed:", tagErr);
+    }
+
+    return NextResponse.json({ mediaId, r2Key });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     console.error("[comfy/save]", err);

@@ -15,12 +15,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { mediaId } = await request.json();
+    const { mediaId, force } = await request.json();
     if (!mediaId) {
       return NextResponse.json({ error: "Missing mediaId" }, { status: 400 });
     }
 
-    await runAnalysis(mediaId);
+    await runAnalysis(mediaId, { force: force === true });
 
     const { data: updated } = await supabase
       .from("media_files")

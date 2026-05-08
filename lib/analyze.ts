@@ -55,8 +55,17 @@ function buildDescriptionEmbeddingText(input: {
   return parts.join("\n").trim();
 }
 
-export async function runAnalysis(mediaId: string): Promise<void> {
-  console.log(`[analyze] Starting analysis for ${mediaId}`);
+export interface RunAnalysisOptions {
+  /** Re-run Gemini even if ai_summary / ai_tags are already populated. */
+  force?: boolean;
+}
+
+export async function runAnalysis(
+  mediaId: string,
+  opts: RunAnalysisOptions = {}
+): Promise<void> {
+  const { force = false } = opts;
+  console.log(`[analyze] Starting analysis for ${mediaId}${force ? " (force=true)" : ""}`);
 
   const supabase = await createClient();
 
@@ -123,8 +132,10 @@ export async function runAnalysis(mediaId: string): Promise<void> {
   const existingTags = normalizeExistingTags(media.ai_tags);
   const existingEmbedding = parseExistingEmbedding(media.embedding);
 
+  // When force is set, ignore any prior summary/tags so Gemini gets a fresh run.
+  // Embedding is reused regardless to avoid wasted compute.
   const hasExistingLegacyAnalysis =
-    existingSummary.trim().length > 0 || existingTags.length > 0;
+    !force && (existingSummary.trim().length > 0 || existingTags.length > 0);
   const hasExistingEmbedding =
     Array.isArray(existingEmbedding) && existingEmbedding.length > 0;
 
@@ -224,7 +235,12 @@ export async function runAnalysis(mediaId: string): Promise<void> {
 
   const updateData: Record<string, unknown> = {};
 
-  if (!hasExistingLegacyAnalysis) {
+  // Write fresh results when there was no prior analysis OR when force=true and
+  // Gemini actually returned something useful this run.
+  const hasFreshAnalysis =
+    analysis.summary.trim().length > 0 || analysis.tags.length > 0;
+
+  if (!hasExistingLegacyAnalysis || (force && hasFreshAnalysis)) {
     updateData.ai_summary = analysis.summary || "Analysis completed";
     updateData.ai_tags = analysis.tags.length > 0 ? analysis.tags : [];
   }

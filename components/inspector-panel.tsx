@@ -17,6 +17,7 @@ import {
   FileText,
   Tag as TagIcon,
   Camera,
+  RefreshCw,
 } from "lucide-react";
 import type { MediaItem } from "@/components/media-grid";
 import type { Folder } from "@/components/library-nav";
@@ -431,6 +432,10 @@ export function InspectorPanel({
             </Section>
           )}
 
+          {/* Re-analyze (force re-run Gemini on these files) */}
+          <ReanalyzeSection ids={ids} onMutated={onMutated} />
+
+
           {/* Content tags (grouped by facet) */}
           <Section icon={<TagIcon className="h-3 w-3" />} title="Content tags">
             {FACET_ORDER.map((facet) => {
@@ -530,6 +535,73 @@ export function InspectorPanel({
         />
       )}
     </>
+  );
+}
+
+function ReanalyzeSection({
+  ids,
+  onMutated,
+}: {
+  ids: string[];
+  onMutated: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  const run = useCallback(async () => {
+    if (ids.length === 0) return;
+    setBusy(true);
+    setResult(null);
+    try {
+      // Force=true so files that already have an `ai_summary` (including the
+      // "Analysis completed" fallback for failed runs) get a fresh Gemini pass.
+      const res = await fetch("/api/analyze-bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mediaIds: ids, force: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setResult(
+        ids.length === 1
+          ? data.successCount === 1
+            ? "Re-analyzed."
+            : `Re-analyze failed: ${data.results?.[0]?.error ?? "unknown"}`
+          : `Re-analyzed: ${data.successCount} ok, ${data.failureCount} failed`
+      );
+      onMutated();
+    } catch (err) {
+      setResult(
+        `Failed: ${err instanceof Error ? err.message : "unknown error"}`
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [ids, onMutated]);
+
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-wider font-semibold text-muted-foreground mb-1.5">
+        Tagging
+      </p>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={run}
+        disabled={busy || ids.length === 0}
+        className="w-full justify-start"
+      >
+        {busy ? (
+          <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+        ) : (
+          <RefreshCw className="h-3.5 w-3.5 mr-2" />
+        )}
+        Re-analyze {ids.length > 1 ? `${ids.length} files` : "this file"}
+      </Button>
+      {result && (
+        <p className="text-[11px] text-muted-foreground mt-1.5">{result}</p>
+      )}
+    </div>
   );
 }
 
