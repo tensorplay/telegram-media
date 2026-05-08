@@ -156,6 +156,10 @@ export const MediaGrid = forwardRef<
         ? "aspect-[9/16]"
         : "aspect-square";
 
+  // Column counts respond to the grid's *container* width, not the viewport.
+  // This matters when the inspector panel slides in from the right and steals
+  // ~22rem from the main column — without container queries the grid would
+  // keep drawing 8 cols in a much narrower box and tiles would shrink.
   const gridColsClass = useMemo(() => {
     if (columns) {
       if (columns === 3) return "grid-cols-3";
@@ -164,12 +168,12 @@ export const MediaGrid = forwardRef<
       if (columns === 6) return "grid-cols-6";
     }
     if (density === "compact") {
-      return "grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8";
+      return "grid-cols-3 @md:grid-cols-4 @2xl:grid-cols-6 @4xl:grid-cols-8";
     }
-    return "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5";
+    return "grid-cols-2 @md:grid-cols-3 @2xl:grid-cols-4 @4xl:grid-cols-5";
   }, [density, columns]);
 
-  const gapClass = density === "compact" ? "gap-1.5 sm:gap-2" : "gap-3 sm:gap-4";
+  const gapClass = density === "compact" ? "gap-1.5 @sm:gap-2" : "gap-3 @sm:gap-4";
 
   // Keyboard navigation: j/k/arrow keys move focus, space selects,
   // 1..6 apply a status, x toggles hero, e opens inspector, enter opens viewer.
@@ -281,7 +285,7 @@ export const MediaGrid = forwardRef<
         ref={containerRef}
         tabIndex={0}
         onKeyDown={handleKey}
-        className="outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-lg"
+        className="@container outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-lg"
       >
         <div className={`grid ${gridColsClass} ${gapClass}`}>
           {visible.map((item, index) => {
@@ -327,12 +331,25 @@ export const MediaGrid = forwardRef<
 
                   {/* top-left: selection checkbox / hero star / variant badge */}
                   <div className="absolute top-1.5 left-1.5 flex items-center gap-1 z-10">
-                    {(selectionMode || selected) && (
-                      <span
-                        className={`h-5 w-5 rounded border-2 flex items-center justify-center transition-colors ${
+                    {onToggleSelect && (
+                      <button
+                        type="button"
+                        aria-label={selected ? "Deselect" : "Select"}
+                        aria-pressed={selected}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          setFocusIndex(index);
+                          onToggleSelect(item.id);
+                        }}
+                        className={`h-5 w-5 rounded border-2 flex items-center justify-center transition-all ${
                           selected
-                            ? "bg-primary border-primary text-primary-foreground"
-                            : "bg-white/80 border-neutral-400"
+                            ? "bg-primary border-primary text-primary-foreground opacity-100"
+                            : "bg-white/80 border-neutral-400 hover:bg-white hover:border-primary"
+                        } ${
+                          selectionMode || selected
+                            ? "opacity-100"
+                            : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                         }`}
                       >
                         {selected && (
@@ -350,7 +367,7 @@ export const MediaGrid = forwardRef<
                             />
                           </svg>
                         )}
-                      </span>
+                      </button>
                     )}
                     {system.hero && (
                       <span
