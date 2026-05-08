@@ -538,6 +538,43 @@ export function InspectorPanel({
   );
 }
 
+// One Vercel function invocation is capped at 300s. With Gemini + taxonomy +
+// occasional Together fallback running ~30-60s per file, four files per batch
+// is a comfortable upper bound. Anything bigger risks the function timing out
+// and returning an HTML error page that the client can't JSON.parse.
+const REANALYZE_BATCH_SIZE = 4;
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    out.push(arr.slice(i, i + size));
+  }
+  return out;
+}
+
+async function parseBulkResponse(res: Response): Promise<{
+  successCount: number;
+  failureCount: number;
+  results?: { mediaId: string; success: boolean; error?: string }[];
+}> {
+  // Server may return an HTML timeout page if the function exceeds maxDuration.
+  // Read as text first so we can surface a useful error instead of a cryptic
+  // "JSON.parse: unexpected character" stack.
+  const text = await res.text();
+  try {
+    const data = JSON.parse(text);
+    if (!res.ok) {
+      throw new Error(data.error ?? `HTTP ${res.status}`);
+    }
+    return data;
+  } catch (parseErr) {
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${text.slice(0, 200) || res.statusText}`);
+    }
+    throw parseErr;
+  }
+}
+
 function ReanalyzeSection({
   ids,
   onMutated,
@@ -547,34 +584,69 @@ function ReanalyzeSection({
 }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
 
   const run = useCallback(async () => {
     if (ids.length === 0) return;
     setBusy(true);
     setResult(null);
+    setProgress(null);
+
+    const batches = chunk(ids, REANALYZE_BATCH_SIZE);
+    let successCount = 0;
+    let failureCount = 0;
+    const errors: string[] = [];
+
     try {
-      // Force=true so files that already have an `ai_summary` (including the
-      // "Analysis completed" fallback for failed runs) get a fresh Gemini pass.
-      const res = await fetch("/api/analyze-bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mediaIds: ids, force: true }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      setResult(
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        if (batches.length > 1) {
+          const done = i * REANALYZE_BATCH_SIZE;
+          setProgress(`Batch ${i + 1}/${batches.length} (${done}/${ids.length} done)`);
+        }
+
+        try {
+          // Force=true so files that already have an `ai_summary` (including
+          // the "Analysis completed" fallback for failed runs) get a fresh
+          // Gemini pass.
+          const res = await fetch("/api/analyze-bulk", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mediaIds: batch, force: true }),
+          });
+          const data = await parseBulkResponse(res);
+          successCount += data.successCount ?? 0;
+          failureCount += data.failureCount ?? 0;
+          for (const r of data.results ?? []) {
+            if (!r.success && r.error) errors.push(r.error);
+          }
+        } catch (batchErr) {
+          // A whole-batch failure (timeout, 5xx) means none of the files in
+          // that batch were updated. Count them as failures and keep going.
+          failureCount += batch.length;
+          errors.push(
+            batchErr instanceof Error ? batchErr.message : String(batchErr)
+          );
+        }
+
+        // Refresh between batches so the user sees newly-tagged files appear
+        // progressively rather than waiting for the full run.
+        onMutated();
+      }
+
+      const baseMsg =
         ids.length === 1
-          ? data.successCount === 1
+          ? successCount === 1
             ? "Re-analyzed."
-            : `Re-analyze failed: ${data.results?.[0]?.error ?? "unknown"}`
-          : `Re-analyzed: ${data.successCount} ok, ${data.failureCount} failed`
-      );
-      onMutated();
-    } catch (err) {
-      setResult(
-        `Failed: ${err instanceof Error ? err.message : "unknown error"}`
-      );
+            : `Re-analyze failed: ${errors[0] ?? "unknown"}`
+          : `Re-analyzed: ${successCount} ok, ${failureCount} failed`;
+      const errPreview =
+        failureCount > 0 && errors.length > 0
+          ? ` — first error: ${errors[0].slice(0, 120)}`
+          : "";
+      setResult(`${baseMsg}${errPreview}`);
     } finally {
+      setProgress(null);
       setBusy(false);
     }
   }, [ids, onMutated]);
@@ -598,6 +670,9 @@ function ReanalyzeSection({
         )}
         Re-analyze {ids.length > 1 ? `${ids.length} files` : "this file"}
       </Button>
+      {progress && (
+        <p className="text-[11px] text-muted-foreground mt-1.5">{progress}</p>
+      )}
       {result && (
         <p className="text-[11px] text-muted-foreground mt-1.5">{result}</p>
       )}
