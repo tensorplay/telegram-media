@@ -147,7 +147,7 @@ export async function runAnalysis(mediaId: string): Promise<void> {
     console.log(`[analyze] Tags: [${analysis.tags.join(", ")}]`);
   }
 
-  if (hasExistingEmbedding) {
+  if (hasExistingEmbedding && embedding) {
     console.log(`[analyze] Reusing existing media embedding: ${embedding.length} dims`);
   }
 

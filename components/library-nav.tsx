@@ -58,7 +58,7 @@ interface LibraryNavProps {
   creatorId: string;
   active: ActiveSelection;
   onSelect: (sel: ActiveSelection) => void;
-  media: MediaItem[];
+  media: (MediaItem & { folder_id?: string | null })[];
   onFoldersChanged: () => void;
   shootNames: { slug: string; name: string; count: number }[];
 }
