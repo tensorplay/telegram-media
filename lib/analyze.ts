@@ -1,7 +1,8 @@
 // lib/analyze.ts
 
 import { createHash } from "node:crypto";
-import { embedMedia, analyzeMedia, embedText } from "@/lib/gemini";
+import { embedMedia, embedText } from "@/lib/gemini";
+import { analyzeMedia } from "@/lib/media-ai-provider";
 import { runTaxonomyPipeline } from "@/lib/media-analysis/run-taxonomy-pipeline";
 import { persistTaxonomyResults } from "@/lib/media-analysis/persist-taxonomy-results";
 import { getSignedViewUrl } from "@/lib/r2";
@@ -281,6 +282,7 @@ export async function runAnalysis(
         descriptionEmbedding,
         mediaEmbedding: embedding && embedding.length > 0 ? embedding : null,
         tasks: taxonomyPipelineResult.tasks,
+        highestExplicitnessLevel: taxonomyPipelineResult.highestExplicitnessLevel ?? "NONE",
       });
 
       console.log(

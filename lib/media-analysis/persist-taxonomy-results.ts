@@ -23,6 +23,7 @@ export type PersistTaxonomyResultsInput = {
   descriptionEmbedding?: number[] | null;
   mediaEmbedding?: number[] | null;
   tasks: TaxonomyTaskResult[];
+  highestExplicitnessLevel?: "NONE" | "LOW" | "MEDIUM" | "HIGH" | "EXTREME" | null;
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -142,7 +143,7 @@ export async function persistTaxonomyResults(
     originalFileHash,
     mediaType,
     referenceName,
-    description = null,
+    description,
     isSexual = false,
     moderationStatus = "PENDING",
     moderation = {},
@@ -150,6 +151,7 @@ export async function persistTaxonomyResults(
     descriptionEmbedding = null,
     mediaEmbedding = null,
     tasks,
+    highestExplicitnessLevel = null,
   } = input;
 
   if (!isValidSha256(originalFileHash)) {
@@ -166,6 +168,25 @@ export async function persistTaxonomyResults(
 
   const supabase = await createClient();
   const taxonomyUpdates = buildTaxonomyUpdates(tasks);
+
+  if (highestExplicitnessLevel) {
+    taxonomyUpdates["ADULT:EXPLICIT_LEVEL"] = {
+      version: 1,
+      updated_at: new Date().toISOString(),
+      source: "computed-from-taxonomy-tags",
+      status: "completed",
+      parent_domain: "ADULT",
+      child_domain: "EXPLICIT_LEVEL",
+      return_summary_format: "computed:ADULT:EXPLICIT_LEVEL",
+      justification: "Computed from the highest explicitness_level among detected taxonomy tags.",
+      confirmed: [highestExplicitnessLevel],
+      probable: [],
+      analysis_result: {
+        confirmed: [highestExplicitnessLevel],
+        probable: [],
+      },
+    };
+  }
 
   const { data: existingRow, error: existingError } = await supabase
     .from("media_content_analysis")
@@ -189,7 +210,7 @@ export async function persistTaxonomyResults(
         original_file_hash: originalFileHash,
         media_type: mediaType,
         reference_name: referenceName,
-        description,
+        description: description ?? null,
         is_sexual: isSexual,
         moderation_status: moderationStatus,
         moderation,
@@ -210,25 +231,30 @@ export async function persistTaxonomyResults(
 
   const mergedTaxonomy = mergeTaxonomy(existingRow.taxonomy, taxonomyUpdates);
 
+  const updatePayload: Record<string, unknown> = {
+    creator_id: creatorId,
+    media_file_id: mediaFileId,
+    r2_key: r2Key,
+    media_type: mediaType,
+    reference_name: referenceName,
+    is_sexual: isSexual,
+    moderation_status: moderationStatus,
+    moderation,
+    taxonomy: mergedTaxonomy,
+    duration_seconds: durationSeconds,
+    description_embedding: descriptionEmbedding,
+    media_embedding: mediaEmbedding,
+  };
+
+  if (description !== undefined) {
+    updatePayload.description = description;
+  }
+
   const { error: updateError } = await supabase
     .from("media_content_analysis")
-    .update({
-      creator_id: creatorId,
-      media_file_id: mediaFileId,
-      r2_key: r2Key,
-      media_type: mediaType,
-      reference_name: referenceName,
-      description,
-      is_sexual: isSexual,
-      moderation_status: moderationStatus,
-      moderation,
-      taxonomy: mergedTaxonomy,
-      duration_seconds: durationSeconds,
-      description_embedding: descriptionEmbedding,
-      media_embedding: mediaEmbedding,
-    })
+    .update(updatePayload)
     .eq("id", existingRow.id);
-
+    
   if (updateError) {
     throw new Error(
       `persistTaxonomyResults: failed to update media_content_analysis: ${updateError.message}`

@@ -1,3 +1,5 @@
+// telegram-media/app/api/search/route.ts
+
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { embedText } from "@/lib/gemini";

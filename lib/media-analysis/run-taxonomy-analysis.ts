@@ -1,6 +1,6 @@
 // lib/media-analysis/run-taxonomy-analysis.ts
 
-import { analyzeMediaWithCustomPrompt } from "@/lib/gemini";
+import { analyzeMediaWithCustomPrompt } from "@/lib/media-ai-provider";
 import { parseTaskFormat } from "@/lib/media-analysis/task-format";
 import { resolveTaskPromptFromFormat } from "@/lib/media-analysis/task-prompt-resolver";
 
