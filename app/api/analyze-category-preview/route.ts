@@ -1,3 +1,4 @@
+// telegram-media/app/api/analyze-category-preview/route.ts
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
@@ -53,6 +54,46 @@ function getApiKeyDebug(request: NextRequest) {
     requestApiKeyPrefix: requestApiKey ? requestApiKey.slice(0, 6) : null,
     keysMatch: Boolean(internalApiKey && requestApiKey === internalApiKey),
   };
+}
+
+function getOnlyFansContentType(mediaType: string): string {
+  const normalizedMediaType = String(mediaType || "").toLowerCase();
+
+  if (normalizedMediaType === "video") return "video/mp4";
+  if (normalizedMediaType === "photo") return "image/jpeg";
+  if (normalizedMediaType === "image") return "image/jpeg";
+  if (normalizedMediaType === "gif") return "image/gif";
+  if (normalizedMediaType === "audio") return "audio/mpeg";
+
+  throw new Error(`Unsupported OnlyFans media_type "${mediaType}"`);
+}
+
+function getOnlyFansR2Key(
+  sessionName: string,
+  mediaId: string,
+  mediaType: string
+): string {
+  const normalizedMediaType = String(mediaType || "").toLowerCase();
+
+  if (normalizedMediaType === "video") {
+    return `vault/${sessionName}/${mediaId}/source.mp4`;
+  }
+
+  if (normalizedMediaType === "photo" || normalizedMediaType === "image") {
+    return `vault/${sessionName}/${mediaId}/source.jpg`;
+  }
+
+  if (normalizedMediaType === "gif") {
+    return `vault/${sessionName}/${mediaId}/source.gif`;
+  }
+
+  if (normalizedMediaType === "audio") {
+    return `vault/${sessionName}/${mediaId}/source.mp3`;
+  }
+
+  throw new Error(
+    `Unsupported OnlyFans media_type "${mediaType}" for vault/${sessionName}/${mediaId}/`
+  );
 }
 
 async function resolveMediaIdFromAnalysisId(
@@ -260,6 +301,28 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
 
+    const mediaContentAnalysisId = String(
+      body.mediaContentAnalysisId ??
+        body.media_content_analysis_id ??
+        ""
+    ).trim();
+
+    const source = String(body.source ?? "").trim().toLowerCase();
+    const sessionName = String(body.sessionName ?? body.session_name ?? "").trim();
+
+    const onlyfansMediaId = String(
+      body.onlyfansMediaId ??
+        body.onlyfans_media_id ??
+        body.mediaIdOf ??
+        ""
+    ).trim();
+
+    const onlyfansMediaType = String(
+      body.mediaType ??
+        body.media_type ??
+        ""
+    ).trim();
+
     console.log("[telegram-medai][analyze-category-preview] request body", {
       mediaContentAnalysisId:
         body.mediaContentAnalysisId ?? body.media_content_analysis_id ?? null,
@@ -269,6 +332,10 @@ export async function POST(request: NextRequest) {
         body.mediaFileId ??
         body.media_file_id ??
         null,
+      source,
+      sessionName,
+      onlyfansMediaId,
+      onlyfansMediaType,
       taskFormat:
         body.taskFormat ??
         body.task_format ??
@@ -280,12 +347,6 @@ export async function POST(request: NextRequest) {
       llmProvider: body.llm_provider ?? body.llm?.provider ?? null,
       llmModelName: body.llm_model_name ?? body.llm?.model ?? null,
     });
-
-    const mediaContentAnalysisId = String(
-      body.mediaContentAnalysisId ??
-        body.media_content_analysis_id ??
-        ""
-    ).trim();
 
     let mediaId = String(
       body.mediaId ??
@@ -407,15 +468,53 @@ export async function POST(request: NextRequest) {
       usingAdminClient: isInternalRequest,
     });
 
-    let media = await loadMedia(supabase, mediaId);
+    let media: MediaRow | null = null;
 
-    if (!media && mediaContentAnalysisId) {
-      console.log("[telegram-medai][analyze-category-preview] media_files not found, trying analysis r2_key fallback", {
-        mediaId,
-        mediaContentAnalysisId,
+    if (source === "onlyfans") {
+      if (!sessionName || !onlyfansMediaId || !onlyfansMediaType) {
+        return NextResponse.json(
+          {
+            ok: false,
+            saved: false,
+            error:
+              "Missing sessionName, onlyfansMediaId, or mediaType for OnlyFans category analysis",
+          },
+          { status: 400 }
+        );
+      }
+
+      media = {
+        id: mediaId || onlyfansMediaId,
+        creator_id: String(body.creatorId ?? body.creator_id ?? "") || null,
+        filename: `${sessionName}/${onlyfansMediaId}`,
+        r2_key: getOnlyFansR2Key(
+          sessionName,
+          onlyfansMediaId,
+          onlyfansMediaType
+        ),
+        content_type: getOnlyFansContentType(onlyfansMediaType),
+        ai_summary: null,
+      };
+
+      console.log("[telegram-medai][analyze-category-preview] using OnlyFans vault media", {
+        mediaId: media.id,
+        sessionName,
+        onlyfansMediaId,
+        onlyfansMediaType,
+        r2Key: media.r2_key,
+        contentType: media.content_type,
       });
+    } else {
+      media = await loadMedia(supabase, mediaId);
 
-      media = await loadAnalysisMedia(supabase, mediaContentAnalysisId);
+      if (!media && mediaContentAnalysisId) {
+        console.log("[telegram-medai][analyze-category-preview] media_files not found, trying analysis r2_key fallback", {
+          mediaId,
+          mediaContentAnalysisId,
+        });
+
+        media = await loadAnalysisMedia(supabase, mediaContentAnalysisId);
+      }
     }
 
     console.log("[telegram-medai][analyze-category-preview] media loaded", {
@@ -467,7 +566,18 @@ export async function POST(request: NextRequest) {
       contentType: media.content_type,
     });
 
-    const mediaBytes = await fetchMediaBytes(media.r2_key);
+    const mediaUrl = await getSignedViewUrl(media.r2_key, 600);
+
+    const response = await fetch(mediaUrl, {
+      method: "GET",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch media from R2: ${response.status}`);
+    }
+
+    const mediaBytes = Buffer.from(await response.arrayBuffer());
 
     const originalFileHash = createHash("sha256")
       .update(mediaBytes)
@@ -489,6 +599,7 @@ export async function POST(request: NextRequest) {
       taskFormat,
       mediaBytes,
       contentType: media.content_type,
+      mediaUrl,
     });
 
     const parsedTask = parseTaskFormat(taskFormat);

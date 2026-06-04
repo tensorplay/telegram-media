@@ -8,6 +8,7 @@ export type RunTaxonomyTaskInput = {
   taskFormat: string;
   mediaBytes: Buffer;
   contentType: string;
+  mediaUrl?: string | null;
 };
 
 export type ExecuteTaxonomyTaskInput = {
@@ -15,6 +16,7 @@ export type ExecuteTaxonomyTaskInput = {
   contentType: string;
   prompt: string;
   taskFormat: string;
+  mediaUrl?: string | null;
 };
 
 export type ExecuteTaxonomyTask = (
@@ -52,9 +54,9 @@ function parseJsonIfPossible(value: unknown): unknown {
 async function defaultExecuteTaxonomyTask(
   input: ExecuteTaxonomyTaskInput
 ): Promise<unknown> {
-  const { mediaBytes, contentType, prompt } = input;
+  const { mediaBytes, contentType, prompt, mediaUrl } = input;
 
-  return analyzeMediaWithCustomPrompt(mediaBytes, contentType, prompt);
+  return analyzeMediaWithCustomPrompt(mediaBytes, contentType, prompt, mediaUrl);
 }
 
 /**
@@ -67,16 +69,35 @@ export async function runTaxonomyTask(
   input: RunTaxonomyTaskInput,
   executeTaxonomyTask: ExecuteTaxonomyTask = defaultExecuteTaxonomyTask
 ): Promise<TaxonomyTaskResult> {
-  const { taskFormat, mediaBytes, contentType } = input;
+  const { taskFormat, mediaBytes, contentType, mediaUrl } = input;
 
   const { taxonomyDomain, parentCategory } = parseTaskFormat(taskFormat);
   const prompt = await resolveTaskPromptFromFormat(taskFormat);
+
+  console.log(
+    "[run-taxonomy-task] prompt\n" +
+      "==================================================\n" +
+      JSON.stringify(
+        {
+          taskFormat,
+          taxonomyDomain,
+          parentCategory,
+          contentType,
+          promptLength: prompt.length,
+          prompt,
+        },
+        null,
+        2
+      ) +
+      "\n=================================================="
+  );
 
   const rawResult = await executeTaxonomyTask({
     mediaBytes,
     contentType,
     prompt,
     taskFormat,
+    mediaUrl,
   });
 
   return {
@@ -100,6 +121,7 @@ export async function runTaxonomyTasks(
   taskFormats: string[],
   mediaBytes: Buffer,
   contentType: string,
+  mediaUrl?: string | null,
   executeTaxonomyTask: ExecuteTaxonomyTask = defaultExecuteTaxonomyTask
 ): Promise<TaxonomyTaskResult[]> {
   const results: TaxonomyTaskResult[] = [];
@@ -110,6 +132,7 @@ export async function runTaxonomyTasks(
         taskFormat,
         mediaBytes,
         contentType,
+        mediaUrl,
       },
       executeTaxonomyTask
     );

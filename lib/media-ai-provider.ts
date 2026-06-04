@@ -1,3 +1,4 @@
+// telegram-media/lib/media-ai-provider.ts
 import {
   analyzeMedia as analyzeMediaWithGemini,
   analyzeMediaWithCustomPrompt as analyzeMediaWithGeminiCustomPrompt,
@@ -7,6 +8,11 @@ import {
   analyzeMediaWithTogether,
   analyzeMediaWithTogetherCustomPrompt,
 } from "@/lib/together";
+
+import {
+  analyzeMediaWithOpenRouter,
+  analyzeMediaWithOpenRouterCustomPrompt,
+} from "@/lib/openrouter";
 
 function isImage(mimeType: string): boolean {
   return mimeType.startsWith("image/");
@@ -25,7 +31,17 @@ function isFallbackableError(error: unknown): boolean {
     normalized.includes("billing") ||
     normalized.includes("dunning") ||
     normalized.includes("rate limit") ||
-    normalized.includes("safety")
+    normalized.includes("safety") ||
+    normalized.includes("content_policy") ||
+    normalized.includes("blocked") ||
+    normalized.includes("moderation")
+  );
+}
+
+function isEmptyAnalyzeResult(result: { summary: string; tags: string[] }): boolean {
+  return (
+    !result.summary?.trim() &&
+    (!Array.isArray(result.tags) || result.tags.length === 0)
   );
 }
 
@@ -33,26 +49,49 @@ export async function analyzeMedia(
   mediaBytes: Buffer,
   mimeType: string
 ): Promise<{ summary: string; tags: string[] }> {
-  try {
-    const result = await analyzeMediaWithGemini(mediaBytes, mimeType);
+  if (!isImage(mimeType)) {
+    return analyzeMediaWithGemini(mediaBytes, mimeType);
+  }
 
-    if (
-      isImage(mimeType) &&
-      !result.summary?.trim() &&
-      (!Array.isArray(result.tags) || result.tags.length === 0)
-    ) {
-      const fallback = await analyzeMediaWithTogether(mediaBytes, mimeType);
-      console.log("[media-ai-provider] Together analyzeMedia result", {
-        hasFallback: !!fallback,
-        summaryLength: fallback?.summary?.length ?? 0,
-        tagCount: fallback?.tags?.length ?? 0,
-      });      
-      if (fallback) return fallback;
+  try {
+    const openRouterResult = await analyzeMediaWithOpenRouter(
+      mediaBytes,
+      mimeType
+    );
+
+    console.log("[media-ai-provider] OpenRouter analyzeMedia result", {
+      hasResult: !!openRouterResult,
+      summaryLength: openRouterResult?.summary?.length ?? 0,
+      tagCount: openRouterResult?.tags?.length ?? 0,
+    });
+
+    if (openRouterResult && !isEmptyAnalyzeResult(openRouterResult)) {
+      return openRouterResult;
+    }
+  } catch (error) {
+    if (!isFallbackableError(error)) {
+      throw error;
     }
 
-    return result;
+    console.warn(
+      "[media-ai-provider] OpenRouter analyzeMedia failed, falling back to Gemini",
+      error
+    );
+  }
+
+  try {
+    const geminiResult = await analyzeMediaWithGemini(mediaBytes, mimeType);
+
+    console.log("[media-ai-provider] Gemini analyzeMedia result", {
+      summaryLength: geminiResult.summary?.length ?? 0,
+      tagCount: geminiResult.tags?.length ?? 0,
+    });
+
+    if (!isEmptyAnalyzeResult(geminiResult)) {
+      return geminiResult;
+    }
   } catch (error) {
-    if (!isImage(mimeType) || !isFallbackableError(error)) {
+    if (!isFallbackableError(error)) {
       throw error;
     }
 
@@ -60,51 +99,78 @@ export async function analyzeMedia(
       "[media-ai-provider] Gemini analyzeMedia failed, falling back to Together",
       error
     );
-
-    const fallback = await analyzeMediaWithTogether(mediaBytes, mimeType);
-
-    console.log("[media-ai-provider] Together analyzeMedia result", {
-      hasFallback: !!fallback,
-      summaryLength: fallback?.summary?.length ?? 0,
-      tagCount: fallback?.tags?.length ?? 0,
-    });
-
-    if (!fallback) {
-      throw error;
-    }
-
-    return fallback;
   }
+
+  const togetherResult = await analyzeMediaWithTogether(mediaBytes, mimeType);
+
+  console.log("[media-ai-provider] Together analyzeMedia result", {
+    hasResult: !!togetherResult,
+    summaryLength: togetherResult?.summary?.length ?? 0,
+    tagCount: togetherResult?.tags?.length ?? 0,
+  });
+
+  if (togetherResult) {
+    return togetherResult;
+  }
+
+  return { summary: "", tags: [] };
 }
 
 export async function analyzeMediaWithCustomPrompt(
   mediaBytes: Buffer,
   mimeType: string,
-  prompt: string
+  prompt: string,
+  mediaUrl?: string | null
 ): Promise<unknown> {
+
   try {
-    const result = await analyzeMediaWithGeminiCustomPrompt(
+    const openRouterResult = await analyzeMediaWithOpenRouterCustomPrompt(
+      mediaBytes,
+      mimeType,
+      prompt,
+      mediaUrl
+    );
+
+    console.log("[media-ai-provider] OpenRouter custom prompt result", {
+      hasResult: !!openRouterResult,
+      length: typeof openRouterResult === "string" ? openRouterResult.length : 0,
+    });
+
+    if (typeof openRouterResult === "string" && openRouterResult.trim()) {
+      return openRouterResult;
+    }
+  } catch (error) {
+    if (!isFallbackableError(error)) {
+      throw error;
+    }
+
+    console.warn(
+      "[media-ai-provider] OpenRouter custom prompt failed, falling back to Gemini",
+      error
+    );
+  }
+
+  try {
+    const geminiResult = await analyzeMediaWithGeminiCustomPrompt(
       mediaBytes,
       mimeType,
       prompt
     );
 
-    if (isImage(mimeType) && typeof result === "string" && !result.trim()) {
-      const fallback = await analyzeMediaWithTogetherCustomPrompt(
-        mediaBytes,
-        mimeType,
-        prompt
-      );
-      console.log("[media-ai-provider] Together custom prompt result", {
-        hasFallback: !!fallback,
-        length: typeof fallback === "string" ? fallback.length : 0,
-      });
-      if (fallback) return fallback;
+    console.log("[media-ai-provider] Gemini custom prompt result", {
+      hasResult: !!geminiResult,
+      length: typeof geminiResult === "string" ? geminiResult.length : 0,
+    });
+
+    if (typeof geminiResult !== "string") {
+      return geminiResult;
     }
 
-    return result;
+    if (geminiResult.trim()) {
+      return geminiResult;
+    }
   } catch (error) {
-    if (!isImage(mimeType) || !isFallbackableError(error)) {
+    if (!isFallbackableError(error)) {
       throw error;
     }
 
@@ -112,22 +178,24 @@ export async function analyzeMediaWithCustomPrompt(
       "[media-ai-provider] Gemini custom prompt failed, falling back to Together",
       error
     );
+  }
 
-    const fallback = await analyzeMediaWithTogetherCustomPrompt(
+  if (isImage(mimeType)) {
+    const togetherResult = await analyzeMediaWithTogetherCustomPrompt(
       mediaBytes,
       mimeType,
       prompt
     );
 
     console.log("[media-ai-provider] Together custom prompt result", {
-      hasFallback: !!fallback,
-      length: typeof fallback === "string" ? fallback.length : 0,
-    });    
+      hasResult: !!togetherResult,
+      length: typeof togetherResult === "string" ? togetherResult.length : 0,
+    });
 
-    if (!fallback) {
-      throw error;
+    if (togetherResult) {
+      return togetherResult;
     }
-
-    return fallback;
   }
+
+  return "";
 }

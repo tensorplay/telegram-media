@@ -11,7 +11,7 @@ import {
   recalculateDescriptionForAnalysisRow,
   type AnalysisRow,
 } from "@/lib/media-analysis/services/recalculate-description-service";
-
+import { linkOnlyFansBundleItemsToAnalysis } from "@/lib/media-analysis/services/link-onlyfans-bundle-items";
 
 export const maxDuration = 300;
 
@@ -282,7 +282,7 @@ async function loadOnlyFansVaultMediaBySessionName({
 
   const { data: existingAnalyses, error: existingError } = await supabase
     .from("media_content_analysis")
-    .select("r2_key, description")
+    .select("id, media_file_id, r2_key, description")
     .in("r2_key", r2Keys);
 
   if (existingError) {
@@ -296,16 +296,26 @@ async function loadOnlyFansVaultMediaBySessionName({
     ])
   );
 
+  const rowsToProcess: MediaRow[] = [];
+
+  for (const row of rows) {
+    const existing = existingByR2Key.get(row.r2_key);
+
+    if (existing?.id && existing?.media_file_id) {
+      await linkOnlyFansBundleItemsToAnalysis({
+        supabase,
+        mediaFileId: String(existing.media_file_id),
+        analysisId: Number(existing.id),
+      });
+    }
+
+    if (!existing || !existing.description) {
+      rowsToProcess.push(row);
+    }
+  }
+
   return {
-    rows: rows.filter((row) => {
-      const existing = existingByR2Key.get(row.r2_key);
-
-      if (!existing) {
-        return true;
-      }
-
-      return !existing.description;
-    }),
+    rows: rowsToProcess,
     scannedCount: rows.length,
   };
 }
@@ -396,32 +406,12 @@ async function recalculateTaxonomyForMedia({
   }
 
   if (media.source === "onlyfans" && persistedAnalysis?.id) {
-    const { data: vaultMedia, error: vaultMediaError } = await supabase
-      .from("vault_media")
-      .select("media_id")
-      .eq("id", media.id)
-      .maybeSingle<{ media_id: number }>();
-
-    if (vaultMediaError) {
-      throw new Error(vaultMediaError.message);
-    }
-
-    if (vaultMedia?.media_id) {
-      const { error: bundleItemsUpdateError } = await supabase
-        .from("bundle_items")
-        .update({
-          media_content_analysis_id: persistedAnalysis.id,
-          analysis_id: persistedAnalysis.id,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("media_id", vaultMedia.media_id)
-        .is("media_content_analysis_id", null);
-
-      if (bundleItemsUpdateError) {
-        throw new Error(bundleItemsUpdateError.message);
-      }
-    }
-  }  
+    await linkOnlyFansBundleItemsToAnalysis({
+      supabase,
+      mediaFileId: media.id,
+      analysisId: persistedAnalysis.id,
+    });
+  }
 
   let descriptionResult: Awaited<
     ReturnType<typeof recalculateDescriptionForAnalysisRow>

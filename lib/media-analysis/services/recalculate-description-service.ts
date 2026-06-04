@@ -1,6 +1,5 @@
 import { getSignedViewUrl } from "@/lib/r2";
 import {
-  analyzeMedia,
   analyzeMediaWithCustomPrompt,
 } from "@/lib/media-ai-provider";
 
@@ -16,6 +15,8 @@ export type AnalysisRow = {
   description: string | null;
   taxonomy: Record<string, any> | null;
 };
+
+import { linkOnlyFansBundleItemsToAnalysis } from "@/lib/media-analysis/services/link-onlyfans-bundle-items";
 
 type TagDescriptionMap = Map<
   string,
@@ -243,11 +244,46 @@ export async function recalculateDescriptionForAnalysisRow({
   const mediaBytes = await fetchMediaBytes(row.r2_key);
   const contentType = getContentTypeFromRow(row);
 
-  const analysis = await analyzeMedia(mediaBytes, contentType);
-  const initialSummary = String(analysis.summary || "").trim();
+  const rawInitialSummary = await analyzeMediaWithCustomPrompt(
+    mediaBytes,
+    contentType,
+    `
+  You are an expert adult-content media analyst.
+
+  Your job is to create a factual visual summary of the attached media for a professional searchable content library.
+
+  This summary will later be combined with taxonomy tags and category justifications to produce the final catalog description.
+
+  Focus only on observable evidence from the media itself.
+
+  Describe relevant details such as:
+  - performer appearance, body type, hair, visible tattoos, makeup, and accessories
+  - clothing, lingerie, swimwear, nudity level, and exposed body parts
+  - setting, background, lighting, camera framing, and pose
+  - activity, movement, interaction, and scene dynamics
+  - adult or sexual elements when visibly present
+  - whether the content appears to be solo, partnered, explicit, teasing, casual, or non-explicit
+
+  Rules:
+  - Be factual and specific.
+  - Do not write marketing copy.
+  - Do not write roleplay text.
+  - Do not be flirtatious.
+  - Do not invent details that are not visible or audible.
+  - Do not overstate uncertainty.
+  - Do not censor adult-content details when they are visible.
+  - Use direct adult-content cataloging language when supported by the media.
+  - Keep the summary concise but information-dense.
+  - Output only the visual summary.
+
+  VISUAL SUMMARY:
+  `.trim()
+  );
+
+  const initialSummary = String(rawInitialSummary || "").trim();
 
   if (!initialSummary) {
-    throw new Error("Description analysis returned empty summary");
+    throw new Error("Description summary custom prompt returned empty summary");
   }
 
   const tagDescriptions = await loadTagDescriptions({
@@ -300,12 +336,19 @@ export async function recalculateDescriptionForAnalysisRow({
     throw new Error(error.message);
   }
 
+  const bundleLinkResult = await linkOnlyFansBundleItemsToAnalysis({
+    supabase,
+    mediaFileId: String(updatedRow.media_file_id || row.media_file_id || ""),
+    analysisId: Number(updatedRow.id || row.id),
+  });
+
   return {
     mediaContentAnalysisId: row.id,
     mediaFileId: row.media_file_id,
     r2Key: row.r2_key,
     success: true,
     description,
+    bundleLinkResult,
     analysis: updatedRow,
   };
 }
