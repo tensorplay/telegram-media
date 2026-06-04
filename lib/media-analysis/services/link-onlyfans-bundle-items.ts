@@ -86,13 +86,32 @@ export async function linkOnlyFansBundleItemsToAnalysis({
     throw new Error(bundleItemsUpdateError.message);
   }
 
-  console.log("[link-onlyfans-bundle-items] updated", {
-    mediaFileId,
-    analysisId,
-    onlyfansMediaId: vaultMedia.media_id,
-    updatedCount: updatedRows?.length ?? 0,
-    updatedIds: (updatedRows ?? []).map((row: any) => row.id).slice(0, 20),
-  });
+  const updatedIds = (updatedRows ?? []).map((row: any) => row.id);
+  const updatedCount = updatedRows?.length ?? 0;
+
+  if (updatedCount > 0) {
+    console.log("[link-onlyfans-bundle-items] saved media_content_analysis_id", {
+      table: "bundle_items",
+      columnsUpdated: ["media_content_analysis_id", "analysis_id", "updated_at"],
+      mediaContentAnalysisIdSaved: analysisId,
+      analysisIdSaved: analysisId,
+      vaultMediaId: mediaFileId,
+      onlyfansMediaId: vaultMedia.media_id,
+      updatedCount,
+      updatedBundleItemIds: updatedIds.slice(0, 50),
+    });
+  } else {
+    console.warn("[link-onlyfans-bundle-items] no bundle_items rows updated", {
+      table: "bundle_items",
+      attemptedColumns: ["media_content_analysis_id", "analysis_id", "updated_at"],
+      attemptedMediaContentAnalysisId: analysisId,
+      attemptedAnalysisId: analysisId,
+      vaultMediaId: mediaFileId,
+      onlyfansMediaId: vaultMedia.media_id,
+      reason:
+        "No rows matched bundle_items.media_id = vault_media.media_id with media_content_analysis_id IS NULL",
+    });
+  }
 
   return {
     linked: true,
