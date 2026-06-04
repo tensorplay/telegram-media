@@ -68,31 +68,36 @@ function getOnlyFansContentType(mediaType: string): string {
   throw new Error(`Unsupported OnlyFans media_type "${mediaType}"`);
 }
 
+function getOnlyFansR2SessionName(sessionName: string): string {
+  return String(sessionName || "").trim().replace(/\s+/g, "_");
+}
+
 function getOnlyFansR2Key(
   sessionName: string,
   mediaId: string,
   mediaType: string
 ): string {
   const normalizedMediaType = String(mediaType || "").toLowerCase();
+  const r2SessionName = getOnlyFansR2SessionName(sessionName);
 
   if (normalizedMediaType === "video") {
-    return `vault/${sessionName}/${mediaId}/source.mp4`;
+    return `vault/${r2SessionName}/${mediaId}/source.mp4`;
   }
 
   if (normalizedMediaType === "photo" || normalizedMediaType === "image") {
-    return `vault/${sessionName}/${mediaId}/source.jpg`;
+    return `vault/${r2SessionName}/${mediaId}/source.jpg`;
   }
 
   if (normalizedMediaType === "gif") {
-    return `vault/${sessionName}/${mediaId}/source.gif`;
+    return `vault/${r2SessionName}/${mediaId}/source.gif`;
   }
 
   if (normalizedMediaType === "audio") {
-    return `vault/${sessionName}/${mediaId}/source.mp3`;
+    return `vault/${r2SessionName}/${mediaId}/source.mp3`;
   }
 
   throw new Error(
-    `Unsupported OnlyFans media_type "${mediaType}" for vault/${sessionName}/${mediaId}/`
+    `Unsupported OnlyFans media_type "${mediaType}" for vault/${r2SessionName}/${mediaId}/`
   );
 }
 
