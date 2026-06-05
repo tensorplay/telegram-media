@@ -230,6 +230,47 @@ FINAL DESCRIPTION:
 `.trim();
 }
 
+function getHumanMediaLabelFromContentType(contentType: string): "video" | "photo" | "audio" {
+  const normalized = String(contentType || "").toLowerCase();
+
+  if (normalized.startsWith("video/")) return "video";
+  if (normalized.startsWith("audio/")) return "audio";
+
+  return "photo";
+}
+
+function normalizeMediaLabelInText(text: string, contentType: string): string {
+  const value = String(text || "").trim();
+
+  if (!value) {
+    return "";
+  }
+
+  const label = getHumanMediaLabelFromContentType(contentType);
+
+  // Do not touch real videos.
+  if (label === "video") {
+    return value;
+  }
+
+  return value
+    // Preserve the meaning of "home video style" without keeping the word video.
+    .replace(/\bhome video style\b/gi, "homemade-style")
+    .replace(/\bhome-video style\b/gi, "homemade-style")
+    .replace(/\bhome video-style\b/gi, "homemade-style")
+    .replace(/\bhome-video-style\b/gi, "homemade-style")
+    .replace(/\bhome_video_style\b/gi, "HOMEMADE_STYLE")
+
+    // Preserve the meaning of "home video" without keeping the word video.
+    .replace(/\bhome video\b/gi, "homemade")
+    .replace(/\bhome-video\b/gi, "homemade")
+    .replace(/\bhome_video\b/gi, "HOMEMADE")
+
+    // Remove video globally after special cases.
+    .replace(/\bvideos\b/gi, `${label}s`)
+    .replace(/\bvideo\b/gi, label);
+}
+
 export async function recalculateDescriptionForAnalysisRow({
   supabase,
   row,
@@ -280,7 +321,10 @@ export async function recalculateDescriptionForAnalysisRow({
   `.trim()
   );
 
-  const initialSummary = String(rawInitialSummary || "").trim();
+  const initialSummary = normalizeMediaLabelInText(
+    String(rawInitialSummary || ""),
+    contentType
+  );
 
   if (!initialSummary) {
     throw new Error("Description summary custom prompt returned empty summary");
@@ -317,7 +361,10 @@ export async function recalculateDescriptionForAnalysisRow({
     "\n=================================================="
   );
 
-  const description = String(rawDescription).trim();
+  const description = normalizeMediaLabelInText(
+    String(rawDescription),
+    contentType
+  );
 
   if (!description) {
     throw new Error("Description analysis returned empty description");

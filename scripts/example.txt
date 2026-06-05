@@ -9,3 +9,11 @@ SOURCE=onlyfans SESSION_NAME="lizakovalenkoo" OF_CREATOR_ID="5574043275" LIMIT=2
 
 SOURCE=onlyfans SESSION_NAME="olivoil-paid" OF_CREATOR_ID="318196447" LIMIT=25 ONLY_MISSING_ANALYSIS=true ./scripts/recalculate-taxonomy-vault.sh
 
+
+
+
+SOURCE=onlyfans SESSION_NAME="oji" OF_CREATOR_ID="195970337" LIMIT=25 ONLY_MISSING_ANALYSIS=true ./scripts/recalculate-taxonomy-vault.sh
+
+
+SOURCE=onlyfans SESSION_NAME="Brooke Stacy" OF_CREATOR_ID="343485885" LIMIT=25 ONLY_MISSING_ANALYSIS=true ./scripts/recalculate-taxonomy-vault.sh
+
