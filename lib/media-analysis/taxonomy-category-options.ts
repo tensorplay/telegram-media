@@ -11,7 +11,7 @@ export type TaxonomyCategoryOption = {
   taxonomyDomain: string;
   description: string | null;
   tags: Array<{
-    id: number;
+    id?: string | number;
     category: string;
     name: string;
     description: string | null;

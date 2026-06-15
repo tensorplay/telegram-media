@@ -1,6 +1,6 @@
 SOURCE=onlyfans \
-SESSION_NAME="olivoil-free" \
-OF_CREATOR_ID="343485885" \
+SESSION_NAME="chubs" \
+OF_CREATOR_ID="15414955" \
 LIMIT=25 \
 ONLY_MISSING_ANALYSIS=true \
 ./scripts/recalculate-taxonomy-vault.sh

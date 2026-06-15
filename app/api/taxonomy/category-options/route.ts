@@ -1,3 +1,4 @@
+// telegram-media/app/api/taxonomy/category-options/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getTaxonomyCategoryOptions } from "@/lib/media-analysis/taxonomy-category-options";
@@ -6,7 +7,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 function getInternalApiKey() {
-  return process.env.MULTIPLATFORM_MEDIA_API_KEY || "";
+  return process.env.MEDIA_KEY || "";
 }
 
 export async function GET(request: NextRequest) {

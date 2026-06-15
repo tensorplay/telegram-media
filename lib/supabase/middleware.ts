@@ -7,6 +7,8 @@ const INTERNAL_MEDIA_API_PATHS = new Set([
   "/api/analyze-category-preview",
   "/api/recalculate-taxonomy",
   "/api/recalculate-description",
+  "/api/sellable-library/chat-search-v2",
+  "/api/sellable-library/manual-search-v2",
 ]);
 
 export async function updateSession(request: NextRequest) {
@@ -41,7 +43,7 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
-  const internalApiKey = process.env.MULTIPLATFORM_MEDIA_API_KEY || "";
+  const internalApiKey = process.env.MEDIA_KEY || "";
   const requestApiKey = request.headers.get("x-api-key");
 
   const isInternalMediaApiPath = INTERNAL_MEDIA_API_PATHS.has(pathname);

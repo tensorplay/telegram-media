@@ -37,14 +37,14 @@ type AnalysisMediaRow = {
 };
 
 function isInternalMediaApiRequest(request: NextRequest) {
-  const internalApiKey = process.env.MULTIPLATFORM_MEDIA_API_KEY || "";
+  const internalApiKey = process.env.MEDIA_KEY || "";
   const requestApiKey = request.headers.get("x-api-key");
 
   return !!internalApiKey && requestApiKey === internalApiKey;
 }
 
 function getApiKeyDebug(request: NextRequest) {
-  const internalApiKey = process.env.MULTIPLATFORM_MEDIA_API_KEY || "";
+  const internalApiKey = process.env.MEDIA_KEY || "";
   const requestApiKey = request.headers.get("x-api-key");
 
   return {
