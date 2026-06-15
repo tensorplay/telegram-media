@@ -31,6 +31,12 @@ type MediaRow = {
 
 type ExistingAnalysisRow = {
   id: number;
+  creator_id: string | null;
+  media_file_id: string;
+  media_type: string;
+  reference_name: string | null;
+  r2_key: string;
+  description: string | null;
   taxonomy: Record<string, unknown> | null;
 };
 
@@ -62,6 +68,35 @@ function getOnlyFansContentType(mediaType: string): string {
   if (normalizedMediaType === "audio") return "audio/mpeg";
 
   throw new Error(`Unsupported OnlyFans media_type "${mediaType}"`);
+}
+
+function getContentTypeFromAnalysisMediaType(mediaType: string): string {
+  const normalizedMediaType = String(mediaType || "")
+    .trim()
+    .toLowerCase();
+
+  if (normalizedMediaType === "video") {
+    return "video/mp4";
+  }
+
+  if (
+    normalizedMediaType === "image" ||
+    normalizedMediaType === "photo"
+  ) {
+    return "image/jpeg";
+  }
+
+  if (normalizedMediaType === "gif") {
+    return "image/gif";
+  }
+
+  if (normalizedMediaType === "audio") {
+    return "audio/mpeg";
+  }
+
+  throw new Error(
+    `Unsupported media_content_analysis.media_type "${mediaType}"`
+  );
 }
 
 function getOnlyFansR2SessionName(sessionName: string): string {
@@ -113,6 +148,20 @@ function normalizeOffset(value: unknown) {
   return Math.max(Math.floor(parsed), 0);
 }
 
+function normalizeMediaContentAnalysisIds(value: unknown): number[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value
+        .map((item) => Number(item))
+        .filter((item) => Number.isInteger(item) && item > 0)
+    )
+  ).slice(0, 100);
+}
+
 function getExistingTaxonomyKeys(
   taxonomy: Record<string, unknown> | null | undefined
 ): string[] {
@@ -155,6 +204,97 @@ async function loadMediaById(
   }
 
   return data ?? null;
+}
+
+async function loadMediaByAnalysisIds({
+  supabase,
+  analysisIds,
+}: {
+  supabase: SupabaseClient;
+  analysisIds: number[];
+}): Promise<MediaRow[]> {
+  const { data, error } = await supabase
+    .from("media_content_analysis")
+    .select(`
+      id,
+      creator_id,
+      media_file_id,
+      media_type,
+      reference_name,
+      r2_key,
+      description,
+      taxonomy
+    `)
+    .in("id", analysisIds);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const analyses = (data ?? []) as ExistingAnalysisRow[];
+
+  const analysesById = new Map(
+    analyses.map((analysis) => [Number(analysis.id), analysis])
+  );
+
+  const missingAnalysisIds = analysisIds.filter(
+    (analysisId) => !analysesById.has(analysisId)
+  );
+
+  if (missingAnalysisIds.length > 0) {
+    throw new Error(
+      `media_content_analysis rows not found: ${missingAnalysisIds.join(", ")}`
+    );
+  }
+
+  return analysisIds.map((analysisId) => {
+    const analysis = analysesById.get(analysisId);
+
+    if (!analysis) {
+      throw new Error(
+        `media_content_analysis row not found: ${analysisId}`
+      );
+    }
+
+    const mediaFileId = String(
+      analysis.media_file_id || ""
+    ).trim();
+
+    const r2Key = String(
+      analysis.r2_key || ""
+    ).trim();
+
+    if (!mediaFileId) {
+      throw new Error(
+        `media_content_analysis ${analysisId} has no media_file_id`
+      );
+    }
+
+    if (!r2Key) {
+      throw new Error(
+        `media_content_analysis ${analysisId} has no r2_key`
+      );
+    }
+
+    return {
+      id: mediaFileId,
+      creator_id: String(
+        analysis.creator_id || ""
+      ).trim(),
+      filename:
+        String(analysis.reference_name || "").trim() ||
+        r2Key.split("/").pop() ||
+        `analysis_${analysisId}`,
+      r2_key: r2Key,
+      content_type: getContentTypeFromAnalysisMediaType(
+        analysis.media_type
+      ),
+      ai_summary: null,
+      source: r2Key.startsWith("vault/")
+        ? ("onlyfans" as const)
+        : ("telegram" as const),
+    };
+  });
 }
 
 async function loadMediaByCreatorId({
@@ -455,17 +595,22 @@ async function recalculateTaxonomyForMedia({
         analysisId: analysisRow.id,
         r2Key: analysisRow.r2_key,
       });
-    } else if (!analysisRow.description) {
+    } else if (force || !analysisRow.description) {
       console.log("[recalculate-taxonomy][description] calculating", {
         mediaId: media.id,
         analysisId: analysisRow.id,
         r2Key: analysisRow.r2_key,
+        force,
+        hadExistingDescription: Boolean(
+          analysisRow.description
+        ),
       });
 
-      descriptionResult = await recalculateDescriptionForAnalysisRow({
-        supabase,
-        row: analysisRow,
-      });
+      descriptionResult =
+        await recalculateDescriptionForAnalysisRow({
+          supabase,
+          row: analysisRow,
+        });
     }
   }
   
@@ -505,6 +650,12 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
 
+    const mediaContentAnalysisIds =
+      normalizeMediaContentAnalysisIds(
+        body.mediaContentAnalysisIds ??
+          body.media_content_analysis_ids
+      );
+
     const mediaId = String(
       body.mediaId ??
         body.media_id ??
@@ -525,25 +676,41 @@ export async function POST(request: NextRequest) {
     const force = body.force === true;
     const calculateDescription = body.calculateDescription === true;    
 
-    if (source === "onlyfans") {
-      if (!sessionName || !ofCreatorId) {
+    if (mediaContentAnalysisIds.length === 0) {
+      if (source === "onlyfans") {
+        if (!sessionName || !ofCreatorId) {
+          return NextResponse.json(
+            {
+              error:
+                "Missing sessionName or ofCreatorId for onlyfans source",
+            },
+            { status: 400 }
+          );
+        }
+      } else if (!mediaId && !creatorId) {
         return NextResponse.json(
-          { error: "Missing sessionName or ofCreatorId for onlyfans source" },
+          {
+            error:
+              "Missing mediaContentAnalysisIds, mediaId or creatorId",
+          },
           { status: 400 }
         );
       }
-    } else if (!mediaId && !creatorId) {
-      return NextResponse.json(
-        { error: "Missing mediaId or creatorId" },
-        { status: 400 }
-      );
     }
 
     const mediaRows: MediaRow[] = [];
 
     let scannedCount = 0;
 
-    if (source === "onlyfans") {
+    if (mediaContentAnalysisIds.length > 0) {
+      const rows = await loadMediaByAnalysisIds({
+        supabase,
+        analysisIds: mediaContentAnalysisIds,
+      });
+
+      scannedCount = rows.length;
+      mediaRows.push(...rows);
+    } else if (source === "onlyfans") {
       const result = await loadOnlyFansVaultMediaBySessionName({
         supabase,
         sessionName,
@@ -565,6 +732,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      scannedCount = 1;
       mediaRows.push(media);
     } else {
       const rows = await loadMediaByCreatorId({
@@ -575,6 +743,7 @@ export async function POST(request: NextRequest) {
         onlyMissingAnalysis,
       });
 
+      scannedCount = rows.length;
       mediaRows.push(...rows);
     }
 
@@ -625,13 +794,19 @@ export async function POST(request: NextRequest) {
       ok: true,
       success: failureCount === 0,
       mode:
-        source === "onlyfans"
-          ? "onlyfans_vault_batch"
-          : mediaId
-            ? "single_media"
-            : "creator_media_batch",
+        mediaContentAnalysisIds.length > 0
+          ? "media_content_analysis_ids_batch"
+          : source === "onlyfans"
+            ? "onlyfans_vault_batch"
+            : mediaId
+              ? "single_media"
+              : "creator_media_batch",
       source,
-      creatorId: source === "onlyfans" ? ofCreatorId : creatorId || null,
+      mediaContentAnalysisIds,
+      creatorId:
+        source === "onlyfans"
+          ? ofCreatorId
+          : creatorId || null,
       sessionName: sessionName || null,
       ofCreatorId: ofCreatorId || null,
       mediaId: mediaId || null,
@@ -640,7 +815,7 @@ export async function POST(request: NextRequest) {
       onlyMissingAnalysis,
       force,
       calculateDescription,
-      scannedCount: source === "onlyfans" ? scannedCount : results.length,
+      scannedCount,
       total: results.length,
       successCount,
       failureCount,

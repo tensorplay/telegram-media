@@ -2285,7 +2285,7 @@ export async function POST(request: NextRequest) {
         ? evaluateRecentSalesGate(normalizedMessages, {
             maxRecent: normalizePositiveInt(
               body.options?.maxMessagesToCheckToBlockSales,
-              5,
+              3,
               100,
             ),
             creatorOnly: normalizeBoolean(

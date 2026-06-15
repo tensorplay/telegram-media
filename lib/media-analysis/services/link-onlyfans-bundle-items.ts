@@ -311,9 +311,8 @@ export async function linkOnlyFansBundleItemsToAnalysis({
     action:
       "Saving media_content_analysis_id into bundle_items rows where it is currently NULL",
     table: "bundle_items",
-    columnsToUpdate: ["media_content_analysis_id", "analysis_id", "updated_at"],
+    columnsToUpdate: ["media_content_analysis_id", "updated_at"],
     mediaContentAnalysisIdToSave: analysisId,
-    analysisIdToSave: analysisId,
     where: {
       media_id: vaultMedia.media_id,
       media_content_analysis_id: "IS NULL",
@@ -331,7 +330,6 @@ export async function linkOnlyFansBundleItemsToAnalysis({
     .from("bundle_items")
     .update({
       media_content_analysis_id: analysisId,
-      analysis_id: analysisId,
       updated_at: new Date().toISOString(),
     })
     .eq("media_id", vaultMedia.media_id)
@@ -359,9 +357,8 @@ export async function linkOnlyFansBundleItemsToAnalysis({
       message:
         "Saved media_content_analysis_id into bundle_items for bundled OnlyFans media.",
       table: "bundle_items",
-      columnsUpdated: ["media_content_analysis_id", "analysis_id", "updated_at"],
+      columnsUpdated: ["media_content_analysis_id", "updated_at"],
       mediaContentAnalysisIdSaved: analysisId,
-      analysisIdSaved: analysisId,
       vaultMediaId: mediaFileId,
       onlyfansMediaId: vaultMedia.media_id,
       updatedCount,
@@ -373,9 +370,8 @@ export async function linkOnlyFansBundleItemsToAnalysis({
       message:
         "bundle_items rows existed with media_content_analysis_id NULL before update, but Supabase update returned zero rows.",
       table: "bundle_items",
-      attemptedColumns: ["media_content_analysis_id", "analysis_id", "updated_at"],
+      attemptedColumns: ["media_content_analysis_id", "updated_at"],
       attemptedMediaContentAnalysisId: analysisId,
-      attemptedAnalysisId: analysisId,
       vaultMediaId: mediaFileId,
       onlyfansMediaId: vaultMedia.media_id,
       existingBundleItemsCount: existingCount,

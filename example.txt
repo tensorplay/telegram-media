@@ -4,3 +4,22 @@ OF_CREATOR_ID="15414955" \
 LIMIT=25 \
 ONLY_MISSING_ANALYSIS=true \
 ./scripts/recalculate-taxonomy-vault.sh
+
+
+
+
+SOURCE=onlyfans \
+SESSION_NAME="Jamie lyn" \
+OF_CREATOR_ID="388768086" \
+LIMIT=25 \
+ONLY_MISSING_ANALYSIS=true \
+./scripts/recalculate-taxonomy-vault.sh
+
+
+
+SOURCE=onlyfans \
+SESSION_NAME="oji" \
+OF_CREATOR_ID="195970337" \
+LIMIT=25 \
+ONLY_MISSING_ANALYSIS=true \
+./scripts/recalculate-taxonomy-vault.sh
