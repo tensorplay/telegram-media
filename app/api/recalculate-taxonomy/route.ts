@@ -12,6 +12,10 @@ import {
   type AnalysisRow,
 } from "@/lib/media-analysis/services/recalculate-description-service";
 import { linkOnlyFansBundleItemsToAnalysis } from "@/lib/media-analysis/services/link-onlyfans-bundle-items";
+import {
+  prepareVideoForAnalysis,
+  type PreparedVideoForAnalysis,
+} from "@/lib/media-analysis/video/prepare-video-for-analysis";
 
 export const maxDuration = 300;
 
@@ -174,10 +178,15 @@ function getExistingTaxonomyKeys(
     .filter(Boolean);
 }
 
-async function fetchMediaBytes(r2Key: string): Promise<Buffer> {
-  const signedUrl = await getSignedViewUrl(r2Key, 600);
+type FetchedMedia = {
+  mediaBytes: Buffer;
+  mediaUrl: string;
+};
 
-  const response = await fetch(signedUrl, {
+async function fetchMedia(r2Key: string): Promise<FetchedMedia> {
+  const mediaUrl = await getSignedViewUrl(r2Key, 600);
+
+  const response = await fetch(mediaUrl, {
     method: "GET",
     cache: "no-store",
   });
@@ -186,7 +195,10 @@ async function fetchMediaBytes(r2Key: string): Promise<Buffer> {
     throw new Error(`Failed to fetch media from R2: ${response.status}`);
   }
 
-  return Buffer.from(await response.arrayBuffer());
+  return {
+    mediaBytes: Buffer.from(await response.arrayBuffer()),
+    mediaUrl,
+  };
 }
 
 async function loadMediaById(
@@ -501,135 +513,184 @@ async function recalculateTaxonomyForMedia({
     throw new Error("Media has no content_type");
   }
 
-  const mediaBytes = await fetchMediaBytes(media.r2_key);
+  const { mediaBytes, mediaUrl: originalMediaUrl } = await fetchMedia(
+    media.r2_key
+  );
 
   const originalFileHash = createHash("sha256")
     .update(mediaBytes)
     .digest("hex");
 
-  const existingAnalysis = await loadExistingAnalysisByHash(
-    supabase,
-    originalFileHash
-  );
+  let preparedVideo: PreparedVideoForAnalysis | null = null;
 
-  const existingTaxonomyKeys = getExistingTaxonomyKeys(
-    existingAnalysis?.taxonomy
-  );
+  try {
+    if (media.content_type.startsWith("video/")) {
+      preparedVideo = await prepareVideoForAnalysis({
+        mediaBytes,
+        mimeType: media.content_type,
+        originalMediaUrl,
+        filename: media.filename || "source.mp4",
+        maxSizeMB: 10,
+        targetSizeMB: 9.5,
+        logTag: "TAXONOMY_VIDEO",
+      });
+    }
 
-  const taxonomyPipelineResult = await runTaxonomyPipeline({
-    mediaBytes,
-    contentType: media.content_type,
-    skipTaskKeys: force ? [] : existingTaxonomyKeys,
-  });
+    const analysisMediaUrl =
+      preparedVideo?.mediaUrl ?? originalMediaUrl;
 
-  await persistTaxonomyResults({
-    creatorId: media.creator_id,
-    mediaFileId: media.id,
-    r2Key: media.r2_key,
-    originalFileHash,
-    mediaType: getMediaType(media.content_type),
-    referenceName: media.filename || media.id,
-    description: undefined,
-    isSexual: taxonomyPipelineResult.isSexual,
-    moderationStatus: "COMPLETED",
-    moderation: {},
-    durationSeconds: null,
-    descriptionEmbedding: null,
-    mediaEmbedding: null,
-    tasks: taxonomyPipelineResult.tasks,
-    highestExplicitnessLevel: taxonomyPipelineResult.highestExplicitnessLevel ?? "NONE",
-  });
+    const analysisMediaBytes =
+      preparedVideo?.mediaBytes ?? mediaBytes;
 
-  const { data: persistedAnalysis, error: persistedAnalysisError } = await supabase
-    .from("media_content_analysis")
-    .select("id, media_file_id")
-    .eq("original_file_hash", originalFileHash)
-    .maybeSingle<{ id: number; media_file_id: string }>();
-
-  if (persistedAnalysisError) {
-    throw new Error(persistedAnalysisError.message);
-  }
-
-  if (media.source === "onlyfans" && persistedAnalysis?.id) {
-    await linkOnlyFansBundleItemsToAnalysis({
-      supabase,
-      mediaFileId: media.id,
-      analysisId: persistedAnalysis.id,
+    console.log("[recalculate-taxonomy][prepared-media]", {
+      mediaId: media.id,
+      contentType: media.content_type,
+      originalBytes: mediaBytes.length,
+      mediaUrlWasPrepared: Boolean(preparedVideo),
+      wasCompressed: preparedVideo?.wasCompressed ?? false,
+      processedBytes: preparedVideo?.processedBytes ?? mediaBytes.length,
     });
-  }
 
-  let descriptionResult: Awaited<
-    ReturnType<typeof recalculateDescriptionForAnalysisRow>
-  > | null = null;
+    const existingAnalysis = await loadExistingAnalysisByHash(
+      supabase,
+      originalFileHash
+    );
 
-  if (calculateDescription) {
-    console.log("[recalculate-taxonomy][description] enabled", {
+    const existingTaxonomyKeys = getExistingTaxonomyKeys(
+      existingAnalysis?.taxonomy
+    );
+
+    const taxonomyPipelineResult = await runTaxonomyPipeline({
+      mediaBytes: analysisMediaBytes,
+      mediaUrl: analysisMediaUrl,
+      contentType: media.content_type,
+      skipTaskKeys: force ? [] : existingTaxonomyKeys,
+    });
+
+    await persistTaxonomyResults({
+      creatorId: media.creator_id,
+      mediaFileId: media.id,
+      r2Key: media.r2_key,
+      originalFileHash,
+      mediaType: getMediaType(media.content_type),
+      referenceName: media.filename || media.id,
+      description: undefined,
+      isSexual: taxonomyPipelineResult.isSexual,
+      moderationStatus: "COMPLETED",
+      moderation: {},
+      durationSeconds: null,
+      descriptionEmbedding: null,
+      mediaEmbedding: null,
+      tasks: taxonomyPipelineResult.tasks,
+      highestExplicitnessLevel:
+        taxonomyPipelineResult.highestExplicitnessLevel ?? "NONE",
+    });
+
+    const {
+      data: persistedAnalysis,
+      error: persistedAnalysisError,
+    } = await supabase
+      .from("media_content_analysis")
+      .select("id, media_file_id")
+      .eq("original_file_hash", originalFileHash)
+      .maybeSingle<{ id: number; media_file_id: string }>();
+
+    if (persistedAnalysisError) {
+      throw new Error(persistedAnalysisError.message);
+    }
+
+    if (media.source === "onlyfans" && persistedAnalysis?.id) {
+      await linkOnlyFansBundleItemsToAnalysis({
+        supabase,
+        mediaFileId: media.id,
+        analysisId: persistedAnalysis.id,
+      });
+    }
+
+    let descriptionResult: Awaited<
+      ReturnType<typeof recalculateDescriptionForAnalysisRow>
+    > | null = null;
+
+    if (calculateDescription) {
+      console.log("[recalculate-taxonomy][description] enabled", {
+        mediaId: media.id,
+        originalFileHash,
+      });
+
+      const { data: analysisRow, error: analysisRowError } =
+        await supabase
+          .from("media_content_analysis")
+          .select(
+            "id, media_file_id, r2_key, media_type, description, taxonomy"
+          )
+          .eq("original_file_hash", originalFileHash)
+          .maybeSingle<AnalysisRow>();
+
+      if (analysisRowError) {
+        throw new Error(analysisRowError.message);
+      }
+
+      if (!analysisRow) {
+        throw new Error(
+          "Could not load media_content_analysis row after taxonomy persistence"
+        );
+      }
+
+      const hasUsableTaxonomy =
+        analysisRow.taxonomy &&
+        typeof analysisRow.taxonomy === "object" &&
+        !Array.isArray(analysisRow.taxonomy) &&
+        Object.keys(analysisRow.taxonomy).length > 0;
+
+      if (!hasUsableTaxonomy) {
+        console.warn(
+          "[recalculate-taxonomy][description] skipped: missing taxonomy",
+          {
+            mediaId: media.id,
+            analysisId: analysisRow.id,
+            r2Key: analysisRow.r2_key,
+          }
+        );
+      } else if (force || !analysisRow.description) {
+        console.log("[recalculate-taxonomy][description] calculating", {
+          mediaId: media.id,
+          analysisId: analysisRow.id,
+          r2Key: analysisRow.r2_key,
+          force,
+          hadExistingDescription: Boolean(analysisRow.description),
+        });
+
+        descriptionResult =
+          await recalculateDescriptionForAnalysisRow({
+            supabase,
+            row: analysisRow,
+            preparedMedia: {
+              mediaBytes: analysisMediaBytes,
+              mediaUrl: analysisMediaUrl,
+              contentType: media.content_type,
+            },
+          });
+      }
+    }
+
+    return {
       mediaId: media.id,
       originalFileHash,
-    });    
-    const { data: analysisRow, error: analysisRowError } = await supabase
-      .from("media_content_analysis")
-      .select("id, media_file_id, r2_key, media_type, description, taxonomy")
-      .eq("original_file_hash", originalFileHash)
-      .maybeSingle<AnalysisRow>();
-
-    if (analysisRowError) {
-      throw new Error(analysisRowError.message);
-    }
-
-    if (!analysisRow) {
-      throw new Error(
-        "Could not load media_content_analysis row after taxonomy persistence"
-      );
-    }
-
-    const hasUsableTaxonomy =
-      analysisRow.taxonomy &&
-      typeof analysisRow.taxonomy === "object" &&
-      !Array.isArray(analysisRow.taxonomy) &&
-      Object.keys(analysisRow.taxonomy).length > 0;
-
-    if (!hasUsableTaxonomy) {
-      console.warn("[recalculate-taxonomy][description] skipped: missing taxonomy", {
-        mediaId: media.id,
-        analysisId: analysisRow.id,
-        r2Key: analysisRow.r2_key,
-      });
-    } else if (force || !analysisRow.description) {
-      console.log("[recalculate-taxonomy][description] calculating", {
-        mediaId: media.id,
-        analysisId: analysisRow.id,
-        r2Key: analysisRow.r2_key,
-        force,
-        hadExistingDescription: Boolean(
-          analysisRow.description
-        ),
-      });
-
-      descriptionResult =
-        await recalculateDescriptionForAnalysisRow({
-          supabase,
-          row: analysisRow,
-        });
-    }
+      force,
+      existingAnalysisId: existingAnalysis?.id ?? null,
+      descriptionResult,
+      existingTaxonomyKeyCount: existingTaxonomyKeys.length,
+      taskCount: taxonomyPipelineResult.tasks.length,
+      executedTaskKeys: taxonomyPipelineResult.executedTaskKeys,
+      skippedTaskKeys: taxonomyPipelineResult.skippedTaskKeys,
+      isSexual: taxonomyPipelineResult.isSexual,
+      highestExplicitnessLevel:
+        taxonomyPipelineResult.highestExplicitnessLevel ?? null,
+    };
+  } finally {
+    await preparedVideo?.cleanup();
   }
-  
-  return {
-    mediaId: media.id,
-    originalFileHash,
-    force,
-    existingAnalysisId: existingAnalysis?.id ?? null,
-    descriptionResult,
-    existingTaxonomyKeyCount: existingTaxonomyKeys.length,
-    taskCount: taxonomyPipelineResult.tasks.length,
-    executedTaskKeys: taxonomyPipelineResult.executedTaskKeys,
-    skippedTaskKeys: taxonomyPipelineResult.skippedTaskKeys,
-    isSexual: taxonomyPipelineResult.isSexual,
-    highestExplicitnessLevel:
-      taxonomyPipelineResult.highestExplicitnessLevel ?? null,
-  };
 }
-
 export async function POST(request: NextRequest) {
   try {
     const sessionSupabase = await createClient();

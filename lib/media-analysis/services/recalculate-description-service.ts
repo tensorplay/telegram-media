@@ -1,3 +1,5 @@
+// telegram-media/lib/media-analysis/services/recalculate-description-service.ts
+import { createHash } from "node:crypto";
 import { getSignedViewUrl } from "@/lib/r2";
 import {
   analyzeMediaWithCustomPrompt,
@@ -14,6 +16,12 @@ export type AnalysisRow = {
   media_type: string | null;
   description: string | null;
   taxonomy: Record<string, any> | null;
+};
+
+export type PreparedDescriptionMedia = {
+  mediaBytes: Buffer;
+  mediaUrl: string;
+  contentType: string;
 };
 
 import { linkOnlyFansBundleItemsToAnalysis } from "@/lib/media-analysis/services/link-onlyfans-bundle-items";
@@ -43,10 +51,15 @@ function getContentTypeFromRow(row: AnalysisRow): string {
   return "image/jpeg";
 }
 
-async function fetchMediaBytes(r2Key: string): Promise<Buffer> {
-  const signedUrl = await getSignedViewUrl(r2Key, 600);
+type FetchedMedia = {
+  mediaBytes: Buffer;
+  mediaUrl: string;
+};
 
-  const response = await fetch(signedUrl, {
+async function fetchMedia(r2Key: string): Promise<FetchedMedia> {
+  const mediaUrl = await getSignedViewUrl(r2Key, 600);
+
+  const response = await fetch(mediaUrl, {
     method: "GET",
     cache: "no-store",
   });
@@ -55,7 +68,25 @@ async function fetchMediaBytes(r2Key: string): Promise<Buffer> {
     throw new Error(`Failed to fetch media from R2: ${response.status}`);
   }
 
-  return Buffer.from(await response.arrayBuffer());
+  const mediaBytes = Buffer.from(await response.arrayBuffer());
+
+  console.log("[fetch-media] downloaded", {
+    r2Key,
+    mediaUrlPresent: Boolean(mediaUrl),
+    mediaUrlLength: mediaUrl.length,
+    status: response.status,
+    contentType: response.headers.get("content-type"),
+    contentLengthHeader: response.headers.get("content-length"),
+    acceptRanges: response.headers.get("accept-ranges"),
+    downloadedBytes: mediaBytes.length,
+    firstBytesHex: mediaBytes.subarray(0, 32).toString("hex"),
+    sha256: createHash("sha256").update(mediaBytes).digest("hex"),
+  });
+
+  return {
+    mediaBytes,
+    mediaUrl,
+  };
 }
 
 async function loadTagDescriptions({
@@ -274,16 +305,37 @@ function normalizeMediaLabelInText(text: string, contentType: string): string {
 export async function recalculateDescriptionForAnalysisRow({
   supabase,
   row,
+  preparedMedia,
 }: {
   supabase: SupabaseClientLike;
   row: AnalysisRow;
+  preparedMedia?: PreparedDescriptionMedia;
 }) {
   if (!row.r2_key) {
     throw new Error("Analysis row has no r2_key");
   }
 
-  const mediaBytes = await fetchMediaBytes(row.r2_key);
-  const contentType = getContentTypeFromRow(row);
+    const fetchedMedia = preparedMedia
+      ? null
+      : await fetchMedia(row.r2_key);
+
+    const mediaBytes =
+      preparedMedia?.mediaBytes ??
+      fetchedMedia?.mediaBytes;
+
+    const mediaUrl =
+      preparedMedia?.mediaUrl ??
+      fetchedMedia?.mediaUrl;
+
+    const contentType =
+      preparedMedia?.contentType ??
+      getContentTypeFromRow(row);
+
+    if (!mediaBytes || !mediaUrl) {
+      throw new Error(
+        "recalculateDescriptionForAnalysisRow: media could not be prepared"
+      );
+    }
 
   const rawInitialSummary = await analyzeMediaWithCustomPrompt(
     mediaBytes,
@@ -318,7 +370,8 @@ export async function recalculateDescriptionForAnalysisRow({
   - Output only the visual summary.
 
   VISUAL SUMMARY:
-  `.trim()
+  `.trim(),
+  mediaUrl
   );
 
   const initialSummary = normalizeMediaLabelInText(
@@ -351,7 +404,8 @@ export async function recalculateDescriptionForAnalysisRow({
   const rawDescription = await analyzeMediaWithCustomPrompt(
     mediaBytes,
     contentType,
-    descriptionPrompt
+    descriptionPrompt,
+    mediaUrl
   );
 
   console.log(

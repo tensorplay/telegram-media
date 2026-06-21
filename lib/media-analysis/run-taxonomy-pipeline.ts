@@ -44,6 +44,7 @@ export type RunTaxonomyPipelineOptions = {
 type PipelineObjectInput = {
   mediaBytes: Buffer;
   contentType: string;
+  mediaUrl?: string | null;
   skipTaskKeys?: Iterable<string>;
 };
 
@@ -353,29 +354,54 @@ function computeIsSexual(highestExplicitnessLevel: ExplicitnessLevel): boolean {
   );
 }
 
+// async function runTaskGroup(
+//   taskFormats: string[],
+//   mediaBytes: Buffer,
+//   contentType: string,
+//   mediaUrl?: string | null
+// ): Promise<TaxonomyTaskResult[]> {
+//   if (!taskFormats.length) {
+//     return [];
+//   }
+
+//   return Promise.all(
+//     taskFormats.map((taskFormat) =>
+//       runTaxonomyTask({
+//         taskFormat,
+//         mediaBytes,
+//         contentType,
+//         mediaUrl,
+//       })
+//     )
+//   );
+// }
+
 async function runTaskGroup(
   taskFormats: string[],
   mediaBytes: Buffer,
-  contentType: string
+  contentType: string,
+  mediaUrl?: string | null
 ): Promise<TaxonomyTaskResult[]> {
-  if (!taskFormats.length) {
-    return [];
+  const results: TaxonomyTaskResult[] = [];
+
+  for (const taskFormat of taskFormats) {
+    const result = await runTaxonomyTask({
+      taskFormat,
+      mediaBytes,
+      contentType,
+      mediaUrl,
+    });
+
+    results.push(result);
   }
 
-  return Promise.all(
-    taskFormats.map((taskFormat) =>
-      runTaxonomyTask({
-        taskFormat,
-        mediaBytes,
-        contentType,
-      })
-    )
-  );
+  return results;
 }
 
 async function runTaxonomyPipelineInternal({
   mediaBytes,
   contentType,
+  mediaUrl,
   skipTaskKeys,
 }: PipelineObjectInput): Promise<RunTaxonomyPipelineOutput> {
   const normalizedSkipTaskKeys = normalizeSkipTaskKeys(skipTaskKeys);
@@ -412,7 +438,8 @@ async function runTaxonomyPipelineInternal({
   const tasksExecuted = await runTaskGroup(
     executableTaskFormats,
     mediaBytes,
-    contentType
+    contentType,
+    mediaUrl
   );
 
   const allConfirmedTags: string[] = [];

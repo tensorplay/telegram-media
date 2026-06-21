@@ -23,3 +23,56 @@ OF_CREATOR_ID="195970337" \
 LIMIT=25 \
 ONLY_MISSING_ANALYSIS=true \
 ./scripts/recalculate-taxonomy-vault.sh
+
+
+
+SOURCE=onlyfans \
+SESSION_NAME="olivoil-paid" \
+OF_CREATOR_ID="318196447" \
+LIMIT=25 \
+ONLY_MISSING_ANALYSIS=true \
+./scripts/recalculate-taxonomy-vault.sh
+
+SOURCE=onlyfans \
+SESSION_NAME="Brooke Stacy" \
+OF_CREATOR_ID="343485885" \
+LIMIT=25 \
+ONLY_MISSING_ANALYSIS=true \
+./scripts/recalculate-taxonomy-vault.sh
+
+SOURCE=onlyfans \
+SESSION_NAME="olivoil-free" \
+OF_CREATOR_ID="382871711" \
+LIMIT=25 \
+ONLY_MISSING_ANALYSIS=true \
+./scripts/recalculate-taxonomy-vault.sh
+
+
+
+SOURCE=onlyfans \
+SESSION_NAME="findingliza" \
+OF_CREATOR_ID="564381454" \
+LIMIT=25 \
+ONLY_MISSING_ANALYSIS=true \
+./scripts/recalculate-taxonomy-vault.sh
+
+
+SOURCE=onlyfans \
+SESSION_NAME="Scarlettexfox" \
+OF_CREATOR_ID="549347422" \
+LIMIT=25 \
+ONLY_MISSING_ANALYSIS=true \
+./scripts/recalculate-taxonomy-vault.sh
+
+
+
+
+curl -X POST \
+  "http://localhost:4500/api/recalculate-taxonomy" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $API_KEY" \
+  --data '{
+    "mediaContentAnalysisIds": [6617, 6433, 6407, 5359],
+    "force": true,
+    "calculateDescription": true
+  }'
