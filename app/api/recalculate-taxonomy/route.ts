@@ -166,6 +166,50 @@ function normalizeMediaContentAnalysisIds(value: unknown): number[] {
   ).slice(0, 100);
 }
 
+// A0: a persisted domain only counts as "already done" (and therefore skippable
+// on a non-forced re-run) when it carries real signal - any confirmed/probable
+// tag or a non-empty justification. Failed video passes persist as empty arrays
+// with a null justification; those must NOT be skipped, or they can never be
+// recovered without force.
+function taxonomyEntryHasSignal(entry: unknown): boolean {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    return false;
+  }
+
+  const e = entry as Record<string, unknown>;
+  const ar =
+    e.analysis_result &&
+    typeof e.analysis_result === "object" &&
+    !Array.isArray(e.analysis_result)
+      ? (e.analysis_result as Record<string, unknown>)
+      : {};
+
+  const confirmed = Array.isArray(e.confirmed)
+    ? e.confirmed
+    : Array.isArray(ar.confirmed)
+      ? ar.confirmed
+      : [];
+
+  const probable = Array.isArray(e.probable)
+    ? e.probable
+    : Array.isArray(ar.probable)
+      ? ar.probable
+      : [];
+
+  const justification =
+    typeof e.justification === "string"
+      ? e.justification
+      : typeof ar.justification === "string"
+        ? ar.justification
+        : "";
+
+  return (
+    confirmed.length > 0 ||
+    probable.length > 0 ||
+    justification.trim().length > 0
+  );
+}
+
 function getExistingTaxonomyKeys(
   taxonomy: Record<string, unknown> | null | undefined
 ): string[] {
@@ -174,8 +218,34 @@ function getExistingTaxonomyKeys(
   }
 
   return Object.keys(taxonomy)
+    .filter((key) =>
+      taxonomyEntryHasSignal((taxonomy as Record<string, unknown>)[key])
+    )
     .map((key) => key.trim().toUpperCase())
     .filter(Boolean);
+}
+
+// A1: detect whether a freshly-run task produced real signal. Large videos sent
+// inline to the provider can come back empty (no confirmed/probable, null
+// justification); such results must not be treated as a successful analysis.
+function taskResultHasSignal(task: { result?: unknown }): boolean {
+  const r =
+    task?.result &&
+    typeof task.result === "object" &&
+    !Array.isArray(task.result)
+      ? (task.result as Record<string, unknown>)
+      : {};
+
+  const confirmed = Array.isArray(r.confirmed) ? r.confirmed : [];
+  const probable = Array.isArray(r.probable) ? r.probable : [];
+  const justification =
+    typeof r.justification === "string" ? r.justification : "";
+
+  return (
+    confirmed.length > 0 ||
+    probable.length > 0 ||
+    justification.trim().length > 0
+  );
 }
 
 type FetchedMedia = {
@@ -567,24 +637,51 @@ async function recalculateTaxonomyForMedia({
       skipTaskKeys: force ? [] : existingTaxonomyKeys,
     });
 
+    const mediaType = getMediaType(media.content_type);
+
+    // A1: did this run actually produce usable taxonomy? Either a freshly-run task
+    // returned signal, or every task was skipped because the existing row was
+    // already good (non-degenerate, see getExistingTaxonomyKeys).
+    const producedSignal = taxonomyPipelineResult.tasks.some(taskResultHasSignal);
+    const hadUsableExisting = existingTaxonomyKeys.length > 0;
+    const taxonomyIsUsable = producedSignal || hadUsableExisting;
+
+    // Only mark COMPLETED when taxonomy is genuinely usable. A video/provider pass
+    // that yields no signal is not "done"; mark it FAILED so it remains retriable
+    // instead of being silently treated as completed.
+    const moderationStatus: "PENDING" | "COMPLETED" | "FAILED" = taxonomyIsUsable
+      ? "COMPLETED"
+      : "FAILED";
+
     await persistTaxonomyResults({
       creatorId: media.creator_id,
       mediaFileId: media.id,
       r2Key: media.r2_key,
       originalFileHash,
-      mediaType: getMediaType(media.content_type),
+      mediaType,
       referenceName: media.filename || media.id,
       description: undefined,
       isSexual: taxonomyPipelineResult.isSexual,
-      moderationStatus: "COMPLETED",
+      moderationStatus,
       moderation: {},
       durationSeconds: null,
       descriptionEmbedding: null,
       mediaEmbedding: null,
       tasks: taxonomyPipelineResult.tasks,
-      highestExplicitnessLevel:
-        taxonomyPipelineResult.highestExplicitnessLevel ?? "NONE",
+      // Don't synthesize EXPLICIT_LEVEL=NONE for a failed/empty run (it would make
+      // the row look non-empty and defeat the A0 degeneracy check).
+      highestExplicitnessLevel: producedSignal
+        ? (taxonomyPipelineResult.highestExplicitnessLevel ?? "NONE")
+        : null,
     });
+
+    // Surface empty results as a retriable failure (A0 keeps the row reprocessable).
+    if (!taxonomyIsUsable) {
+      throw new Error(
+        `Taxonomy produced no signal for ${mediaType} media ${media.id} ` +
+          `(likely a provider/media limitation - marked FAILED for retry)`
+      );
+    }
 
     const {
       data: persistedAnalysis,

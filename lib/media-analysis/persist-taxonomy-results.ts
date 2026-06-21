@@ -107,10 +107,29 @@ function buildTaxonomyEntry(task: TaxonomyTaskResult): Record<string, unknown> {
   };
 }
 
+// A0: a task result only carries usable signal when it has a confirmed/probable
+// tag or a non-empty justification. Empty/failed passes are omitted so a
+// re-run can never overwrite a previously-good domain with nothing (mergeTaxonomy
+// is a shallow spread).
+function taskHasSignal(task: TaxonomyTaskResult): boolean {
+  const normalized = normalizeCategoriesFromTaskResult(task);
+
+  return (
+    normalized.confirmed.length > 0 ||
+    normalized.probable.length > 0 ||
+    (typeof normalized.justification === "string" &&
+      normalized.justification.trim().length > 0)
+  );
+}
+
 function buildTaxonomyUpdates(tasks: TaxonomyTaskResult[]): Record<string, unknown> {
   const updates: Record<string, unknown> = {};
 
   for (const task of tasks) {
+    if (!taskHasSignal(task)) {
+      continue;
+    }
+
     const key = buildTaxonomyDomainKey(
       task.taxonomyDomain,
       task.parentCategory
@@ -129,6 +148,12 @@ function buildTaxonomyUpdates(tasks: TaxonomyTaskResult[]): Record<string, unkno
  * - finds an existing row by original_file_hash
  * - inserts a new row if not found
  * - otherwise merges taxonomy updates into the existing taxonomy jsonb field
+ *
+ * Safeguards:
+ * - empty task results are not persisted into taxonomy
+ * - empty task results cannot overwrite previously-good taxonomy domains
+ * - callers may still persist moderation_status="FAILED" with empty taxonomy so
+ *   failed media stays visible/retriable instead of silently looking completed
  *
  * This function only persists the new taxonomy analysis layer.
  * It does not replace the current media_files ai_summary / ai_tags flow.
@@ -162,10 +187,6 @@ export async function persistTaxonomyResults(
     throw new Error('persistTaxonomyResults: "referenceName" is required');
   }
 
-  if (!tasks.length) {
-    return;
-  }
-
   const supabase = await createClient();
   const taxonomyUpdates = buildTaxonomyUpdates(tasks);
 
@@ -186,6 +207,15 @@ export async function persistTaxonomyResults(
         probable: [],
       },
     };
+  }
+
+  const hasTaxonomyUpdates = Object.keys(taxonomyUpdates).length > 0;
+
+  // Normal successful/pending calls with no usable signal should not create/update
+  // a row. FAILED calls are intentionally allowed through so the caller can mark
+  // the media as retriable even when taxonomyUpdates is empty.
+  if (!hasTaxonomyUpdates && moderationStatus !== "FAILED") {
+    return;
   }
 
   const { data: existingRow, error: existingError } = await supabase
@@ -254,7 +284,7 @@ export async function persistTaxonomyResults(
     .from("media_content_analysis")
     .update(updatePayload)
     .eq("id", existingRow.id);
-    
+
   if (updateError) {
     throw new Error(
       `persistTaxonomyResults: failed to update media_content_analysis: ${updateError.message}`
