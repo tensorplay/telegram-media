@@ -445,26 +445,7 @@ async function loadOnlyFansVaultMediaBySessionName({
   offset: number;
   onlyMissingAnalysis: boolean;
 }): Promise<{ rows: MediaRow[]; scannedCount: number }> {
-  const { data: vaultRows, error: vaultError } = await supabase
-    .from("vault_media")
-    .select(`
-      id,
-      session_name,
-      media_id,
-      media_type,
-      duration,
-      created_at,
-      created_at_of
-    `)
-    .eq("session_name", sessionName)
-    .order("media_id", { ascending: true })
-    .range(offset, offset + limit - 1);
-
-  if (vaultError) {
-    throw new Error(vaultError.message);
-  }
-
-  const rows = (vaultRows ?? []).map((row: any) => {
+  const mapVaultRowToMediaRow = (row: any): MediaRow => {
     const mediaId = String(row.media_id || "").trim();
     const mediaType = String(row.media_type || "").toLowerCase();
 
@@ -496,12 +477,161 @@ async function loadOnlyFansVaultMediaBySessionName({
       ai_summary: null,
       source: "onlyfans" as const,
     };
-  });
+  };
 
-  if (!onlyMissingAnalysis || rows.length === 0) {
+  if (!onlyMissingAnalysis) {
+    const { data: vaultRows, error: vaultError } = await supabase
+      .from("vault_media")
+      .select(`
+        id,
+        session_name,
+        media_id,
+        media_type,
+        duration,
+        created_at,
+        created_at_of
+      `)
+      .eq("session_name", sessionName)
+      .order("media_id", { ascending: true })
+      .range(offset, offset + limit - 1);
+
+    if (vaultError) {
+      throw new Error(vaultError.message);
+    }
+
+    const rows = (vaultRows ?? []).map(mapVaultRowToMediaRow);
+
     return {
       rows,
       scannedCount: rows.length,
+    };
+  }
+
+  /**
+   * ONLY_MISSING_ANALYSIS mode:
+   *
+   * Prioritize media that is already used in bundles but whose bundle_item is not
+   * linked to media_content_analysis yet. This makes recalculate-taxonomy unlock
+   * the Sellable Library / bundle flow first instead of spending batches on random
+   * vault_media that is not currently used by any bundle.
+   *
+   * Important:
+   * - We intentionally do not apply the external offset to the missing queue.
+   *   The missing queue shrinks as rows get analyzed/linked, so offset-based
+   *   pagination can skip work. Taking the first N missing candidates each run is
+   *   safer for a retry queue.
+   * - After bundled candidates, we fill the batch with normal vault_media.
+   */
+  const maxCandidateCount = Math.min(Math.max(limit * 20, 100), 1000);
+
+  const { data: bundleRows, error: bundleError } = await supabase
+    .from("bundles")
+    .select("id")
+    .eq("session_name", sessionName);
+
+  if (bundleError) {
+    throw new Error(bundleError.message);
+  }
+
+  const bundleIds = (bundleRows ?? [])
+    .map((row: any) => String(row.id || "").trim())
+    .filter(Boolean);
+
+  let prioritizedMediaIds: string[] = [];
+
+  if (bundleIds.length > 0) {
+    const { data: bundleItemRows, error: bundleItemError } = await supabase
+      .from("bundle_items")
+      .select("media_id")
+      .in("bundle_id", bundleIds)
+      .is("media_content_analysis_id", null)
+      .not("media_id", "is", null)
+      .limit(maxCandidateCount);
+
+    if (bundleItemError) {
+      throw new Error(bundleItemError.message);
+    }
+
+    prioritizedMediaIds = Array.from(
+      new Set(
+        (bundleItemRows ?? [])
+          .map((row: any) => String(row.media_id || "").trim())
+          .filter(Boolean)
+      )
+    );
+  }
+
+  const candidateVaultRows: any[] = [];
+  const candidateMediaIds = new Set<string>();
+
+  const addCandidateRows = (rows: any[] | null | undefined) => {
+    for (const row of rows ?? []) {
+      const mediaId = String(row.media_id || "").trim();
+
+      if (!mediaId || candidateMediaIds.has(mediaId)) {
+        continue;
+      }
+
+      candidateMediaIds.add(mediaId);
+      candidateVaultRows.push(row);
+    }
+  };
+
+  if (prioritizedMediaIds.length > 0) {
+    const { data: prioritizedVaultRows, error: prioritizedVaultError } =
+      await supabase
+        .from("vault_media")
+        .select(`
+          id,
+          session_name,
+          media_id,
+          media_type,
+          duration,
+          created_at,
+          created_at_of
+        `)
+        .eq("session_name", sessionName)
+        .in("media_id", prioritizedMediaIds)
+        .order("media_id", { ascending: true })
+        .limit(maxCandidateCount);
+
+    if (prioritizedVaultError) {
+      throw new Error(prioritizedVaultError.message);
+    }
+
+    addCandidateRows(prioritizedVaultRows);
+  }
+
+  if (candidateVaultRows.length < maxCandidateCount) {
+    const { data: fallbackVaultRows, error: fallbackVaultError } =
+      await supabase
+        .from("vault_media")
+        .select(`
+          id,
+          session_name,
+          media_id,
+          media_type,
+          duration,
+          created_at,
+          created_at_of
+        `)
+        .eq("session_name", sessionName)
+        .order("media_id", { ascending: true })
+        .limit(maxCandidateCount);
+
+    if (fallbackVaultError) {
+      throw new Error(fallbackVaultError.message);
+    }
+
+    addCandidateRows(fallbackVaultRows);
+  }
+
+  const rows = candidateVaultRows.map(mapVaultRowToMediaRow);
+
+  if (rows.length === 0) {
+    return {
+      rows: [],
+      scannedCount: 0,
     };
   }
 
@@ -538,6 +668,10 @@ async function loadOnlyFansVaultMediaBySessionName({
 
     if (!existing || !existing.description) {
       rowsToProcess.push(row);
+    }
+
+    if (rowsToProcess.length >= limit) {
+      break;
     }
   }
 
